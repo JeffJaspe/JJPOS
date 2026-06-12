@@ -37,6 +37,7 @@ export const PERM_KEYS = [
   'void',
   'price_override',
   'edit_items',
+  'edit_customers',
   'stock_adjust',
   'approve_voids',
   'export_reports',
@@ -45,6 +46,97 @@ export const PERM_KEYS = [
   'manage_settings'
 ] as const
 export type PermKey = (typeof PERM_KEYS)[number]
+
+// ---------------------------------------------------------------------------
+// Masterfiles
+// ---------------------------------------------------------------------------
+// Note: SQLite has no booleans — `active` is 0/1. Money fields are centavos.
+
+export interface Category {
+  id: number
+  name: string
+}
+
+export interface Supplier {
+  id: number
+  name: string
+  contact: string
+  active: number
+}
+
+export interface ItemListQuery {
+  search?: string
+  categoryId?: number | null
+  includeInactive?: boolean
+}
+
+export interface ItemRow {
+  id: number
+  sku: string
+  name: string
+  description: string
+  category_id: number | null
+  category_name: string | null
+  unit: string
+  cost_price: number
+  sell_price: number
+  wholesale_price: number | null
+  reorder_level: number
+  tax_type: string
+  qty_on_hand: number
+  active: number
+  barcode_count: number
+}
+
+export interface ItemDetail extends ItemRow {
+  barcodes: string[]
+}
+
+export interface ItemInput {
+  sku: string
+  name: string
+  description: string
+  category_id: number | null
+  unit: string
+  cost_price: number
+  sell_price: number
+  wholesale_price: number | null
+  reorder_level: number
+  tax_type: 'vat' | 'non_vat'
+  active: number
+  barcodes: string[]
+}
+
+export interface CustomerListQuery {
+  search?: string
+  includeInactive?: boolean
+}
+
+export interface CustomerRow {
+  id: number
+  code: string
+  name: string
+  contact: string
+  address: string
+  tin: string
+  credit_limit: number
+  terms_days: number
+  opening_balance: number
+  active: number
+}
+
+export interface CustomerInput {
+  code: string
+  name: string
+  contact: string
+  address: string
+  tin: string
+  credit_limit: number
+  terms_days: number
+  /** Only honored on create — posts the starting ledger entry. Ignored on update. */
+  opening_balance: number
+  active: number
+}
 
 /** Key/value rows from the branding table. */
 export interface Branding {

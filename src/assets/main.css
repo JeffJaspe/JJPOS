@@ -18,6 +18,19 @@ body {
   overscroll-behavior: none;
 }
 
+/* Shared form/button styles so every view doesn't repeat the same utility soup. */
+@layer components {
+  .input {
+    @apply w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-accent focus:ring-2 focus:ring-accent/30 focus:outline-none disabled:bg-gray-100 disabled:text-gray-500;
+  }
+  .btn-primary {
+    @apply rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-transform duration-100 hover:opacity-90 active:scale-[0.98] disabled:opacity-50;
+  }
+  .btn-secondary {
+    @apply rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-transform duration-100 hover:bg-gray-50 active:scale-[0.98] disabled:opacity-50;
+  }
+}
+
 /* Router page transition: subtle fade + 8px slide, 150ms (see CLAUDE.md). */
 .page-enter-active,
 .page-leave-active {
@@ -45,6 +58,53 @@ body {
 .toast-leave-to {
   opacity: 0;
   transform: translateX(16px);
+}
+
+/* Modal: fade backdrop + scale-in panel, 200ms (see CLAUDE.md). */
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity 200ms ease;
+}
+.modal-enter-active .modal-panel,
+.modal-leave-active .modal-panel {
+  transition: transform 200ms ease;
+}
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
+}
+.modal-enter-from .modal-panel,
+.modal-leave-to .modal-panel {
+  transform: scale(0.95);
+}
+
+/* Row enter/leave for TransitionGroup lists. */
+.rows-enter-active,
+.rows-leave-active {
+  transition:
+    opacity 150ms ease,
+    transform 150ms ease;
+}
+.rows-enter-from,
+.rows-leave-to {
+  opacity: 0;
+  transform: translateX(8px);
+}
+
+/*
+ * Printing: the label print area is teleported to <body> outside #app.
+ * On screen it stays hidden; on paper it is the only thing visible.
+ */
+.print-area {
+  display: none;
+}
+@media print {
+  #app {
+    display: none !important;
+  }
+  .print-area {
+    display: block;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -46,7 +46,7 @@ docs/PLAN.md       full feature plan and schema
 ## Roles & permissions
 
 - Built-in roles: Super admin (locked), Supervisor admin, Cashier, Report account. Super admin can create custom roles.
-- `role_menus` controls sidebar visibility; `role_permissions` controls actions (sell, void, price_override, edit_items, stock_adjust, approve_voids, export_reports, manage_branding, manage_users, manage_settings).
+- `role_menus` controls sidebar visibility; `role_permissions` controls actions (sell, void, price_override, edit_items, edit_customers, stock_adjust, approve_voids, export_reports, manage_branding, manage_users, manage_settings).
 - Vue router guards check menus; IPC handlers check permissions. Both, always.
 
 ## UI conventions

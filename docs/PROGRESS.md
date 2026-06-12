@@ -1,5 +1,34 @@
 # Progress
 
+## Phase 2 — Masterfiles ✅ (Jun 12, 2026)
+
+Items, Customers, Categories, and Suppliers CRUD, with barcode assignment/generation and label printing. Verified end-to-end by driving the real UI over the Chrome DevTools Protocol (login → create item → generate barcode → save → edit → labels → category/supplier → customer).
+
+### What's in place
+
+- **Items**: searchable/filterable list (name, SKU, exact barcode), create/edit modal with all PLAN fields, soft-delete via active flag, low-stock highlight (qty ≤ reorder level).
+- **Barcodes**: multiple per item; scan-to-assign input; auto-generated internal EAN-13 (`2` in-store prefix + 11-digit sequence from `settings.barcode_sequence` + check digit, `shared/barcode.ts`); cross-item uniqueness enforced with friendly errors.
+- **Label printing**: per-item modal (barcode picker, copies), jsbarcode SVG (EAN-13/Code 128 auto-pick), 50×30 mm labels in a print-only area (`window.print()`).
+- **Customers**: CRUD with credit limit, terms (COD/7/15/30), TIN; **opening balance posts an `adj` ledger entry at creation** so Phase 5 derives balances purely from `ledger_entries`; the field is read-only after creation.
+- **Categories/Suppliers**: inline panels under Items tabs. Category delete blocked by FK if items use it; suppliers soft-delete only (Phase 4 receiving will reference them).
+- **IPC**: `items`, `customers`, `categories`, `suppliers` domains; writes gated by `edit_items` / **`edit_customers` (new perm, migration 002)**; UNIQUE-constraint errors mapped to actionable messages.
+
+### Bugs found & fixed during verification
+
+1. **Route transitions froze when window occluded** — Chromium throttles rAF for backgrounded windows, so `<Transition mode="out-in">` never finished and views never mounted. Fixed with `backgroundThrottling: false` (right call for a POS terminal anyway).
+2. **Reactive Proxy can't cross contextBridge** — sending `form.barcodes` (Vue reactive array) threw "An object could not be cloned"; plain-copy before IPC.
+3. Removed default Electron menu (`Menu.setApplicationMenu(null)`) — kiosk app; Alt accelerator interfered with keyboard-first flows.
+
+### Dev affordance
+
+`JJPOS_DEBUG_PORT=9222 npm run dev` exposes CDP for E2E driving/inspection. Never set in production.
+
+### Next: Phase 3 — POS Core
+
+POS screen (scan/search, cart, discounts, cash payment, change), receipt printing, stock deduction via `stock_movements`, hold/recall, void with permission.
+
+---
+
 ## Phase 1 — Foundation ✅ (Jun 12, 2026)
 
 Scaffolded the app from scratch and verified it end-to-end (`npm run dev` boots, login works, shell renders).

@@ -1,7 +1,13 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, Menu, shell } from 'electron'
 import { join } from 'node:path'
 import { initDatabase } from './db'
 import { registerIpcHandlers } from './ipc'
+
+// Dev/testing affordance: JJPOS_DEBUG_PORT=9222 npm run dev exposes the
+// Chrome DevTools Protocol so tooling can drive the renderer. Never set in production.
+if (process.env['JJPOS_DEBUG_PORT']) {
+  app.commandLine.appendSwitch('remote-debugging-port', process.env['JJPOS_DEBUG_PORT'])
+}
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -16,7 +22,10 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: false,
+      // POS terminal: never throttle when occluded — rAF-driven view transitions,
+      // print jobs, and scanner timers must keep running with the window in back.
+      backgroundThrottling: false
     }
   })
 
@@ -36,6 +45,9 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  // No default File/Edit menu — this is a kiosk-style POS app, and the menu's
+  // Alt accelerator interferes with keyboard-first cashier workflows.
+  Menu.setApplicationMenu(null)
   initDatabase()
   registerIpcHandlers()
   createWindow()
