@@ -55,6 +55,7 @@ docs/PLAN.md       full feature plan and schema
 - POS screen is keyboard/barcode-first: a focused input captures scans (scanner sends code + Enter). Support hold/recall, split payment, charge-to-account.
 - POS screen supports true fullscreen (F11/button, kiosk-style). The amount to pay (and change due) is displayed huge — readable from ~2 meters.
 - Scans that don't match an item are checked against voucher codes; a valid voucher deducts from the total and is redeemed atomically with the sale. Vouchers are issued/cancelled in the Items → Vouchers tab, gated by `manage_vouchers` and audit-logged; redeemed/cancelled vouchers are immutable history.
+- Item-specific promo discounts (Items → Promos tab, `edit_items`): scheduled % off / amount off / fixed price per item set; POS auto-applies the best active promo (lowest price wins) and records `sale_items.promo_id`.
 - Voids by users without permission go through an inline supervisor-override prompt (supervisor credentials, no logout); overrides are audit-logged with both users.
 - Use Tailwind utilities; keep components small and typed (TypeScript everywhere).
 

@@ -43,6 +43,7 @@ Scope additions agreed Jun 13, 2026 (see PLAN §3.2):
 - Giant total/change display readable from ~2 meters.
 - Voucher barcodes: scan → validate → deduct from total, redeemed atomically with the sale (`vouchers` table, `sales.voucher_discount`).
 - Voucher issuance: new tab in the Items view (with Categories/Suppliers); create single/batch, print barcodes via the label pipeline; gated by a new `manage_vouchers` permission (migration; seeded to Super admin & Supervisor admin); issue/cancel audit-logged; redeemed/cancelled vouchers immutable.
+- Promos: item-specific scheduled discounts (Items → Promos tab, `edit_items`); % off / amount off / fixed price, optional date range, multi-item; POS auto-applies best active promo and records `sale_items.promo_id`; deactivate-not-delete for history.
 - Inline supervisor override for voids (supervisor credentials without cashier logout, both users audit-logged).
 
 ---
