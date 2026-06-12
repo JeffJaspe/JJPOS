@@ -46,7 +46,7 @@ docs/PLAN.md       full feature plan and schema
 ## Roles & permissions
 
 - Built-in roles: Super admin (locked), Supervisor admin, Cashier, Report account. Super admin can create custom roles.
-- `role_menus` controls sidebar visibility; `role_permissions` controls actions (sell, void, price_override, edit_items, edit_customers, stock_adjust, approve_voids, export_reports, manage_branding, manage_users, manage_settings).
+- `role_menus` controls sidebar visibility; `role_permissions` controls actions (sell, void, price_override, edit_items, edit_customers, manage_vouchers, stock_adjust, approve_voids, export_reports, manage_branding, manage_users, manage_settings).
 - Vue router guards check menus; IPC handlers check permissions. Both, always.
 
 ## UI conventions
@@ -54,7 +54,7 @@ docs/PLAN.md       full feature plan and schema
 - Collapsible sidebar (full ↔ icon-only) toggled by a burger button; active accent color and logo come from the `branding` table.
 - POS screen is keyboard/barcode-first: a focused input captures scans (scanner sends code + Enter). Support hold/recall, split payment, charge-to-account.
 - POS screen supports true fullscreen (F11/button, kiosk-style). The amount to pay (and change due) is displayed huge — readable from ~2 meters.
-- Scans that don't match an item are checked against voucher codes; a valid voucher deducts from the total and is redeemed atomically with the sale.
+- Scans that don't match an item are checked against voucher codes; a valid voucher deducts from the total and is redeemed atomically with the sale. Vouchers are issued/cancelled in the Items → Vouchers tab, gated by `manage_vouchers` and audit-logged; redeemed/cancelled vouchers are immutable history.
 - Voids by users without permission go through an inline supervisor-override prompt (supervisor credentials, no logout); overrides are audit-logged with both users.
 - Use Tailwind utilities; keep components small and typed (TypeScript everywhere).
 

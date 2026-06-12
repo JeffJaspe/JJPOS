@@ -45,6 +45,12 @@ A standalone desktop Point-of-Sale system built with Electron, featuring invento
 **Other masterfiles**
 - Categories, Suppliers, Users (role-based), Payment methods, Store settings (name, address, receipt header/footer, VAT rate, currency ₱)
 
+**Vouchers (tab in the Items menu, alongside Categories/Suppliers)**
+- Controlled issuance: only users with `manage_vouchers` (seeded to Super admin & Supervisor admin) can create or cancel vouchers; every issue/cancel is audit-logged
+- Create single or batch; code auto-generated (internal barcode sequence) or typed; fixed amount or percent; optional expiry and note
+- Print voucher barcodes via the label print pipeline
+- Status lifecycle: active → redeemed (at POS, atomic with the sale) or cancelled; redeemed/cancelled vouchers are never deletable — they are history
+
 ### 3.2 POS / Sales Screen
 - Barcode-first workflow: scan → item added → quantity editable
 - Manual search by name/SKU with keyboard shortcuts (F-keys for speed)
@@ -52,7 +58,7 @@ A standalone desktop Point-of-Sale system built with Electron, featuring invento
 - **Giant total display**: the amount to pay is rendered huge — readable from ~2 meters — so the customer can verify it at a glance; change due gets the same treatment after payment
 - Cart panel: qty, price override (permission-gated), line discount, remove
 - Discounts: per-line and whole-transaction (% or fixed); senior/PWD discount preset if Philippine compliance is needed
-- **Vouchers**: scan a voucher barcode at POS → validated (active, not expired, not yet redeemed) and its value deducted from the total; the voucher is marked redeemed atomically with the sale and the redemption is recorded on the sale
+- **Vouchers**: scan a voucher barcode at POS → validated (active, not expired, not yet redeemed) and its value deducted from the total; the voucher is marked redeemed atomically with the sale and the redemption is recorded on the sale. Issuance is managed in the Items → Vouchers tab (see 3.1), gated by `manage_vouchers`
 - Payment: cash (with change computation), card, GCash/e-wallet, split payment, **charge to account (credit sale → ledger)**
 - Hold/recall transactions
 - Receipt printing (thermal 58/80mm) + reprint
