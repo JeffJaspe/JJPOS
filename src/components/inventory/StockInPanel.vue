@@ -11,8 +11,11 @@ const toast = useToast()
 interface ReceiveLine {
   item: ItemRow
   qty: number
-  /** New unit cost in pesos text; empty = keep the current cost. */
-  newCost: string
+  /**
+   * New unit cost; empty = keep the current cost. Starts as a string but
+   * v-model on a number input casts typed values to number — handle both.
+   */
+  newCost: string | number
 }
 
 const suppliers = ref<Supplier[]>([])
@@ -43,7 +46,7 @@ async function commit(): Promise<void> {
       lines: lines.value.map((l) => ({
         item_id: l.item.id,
         qty: Math.trunc(l.qty) || 1,
-        new_cost: l.newCost.trim() === '' ? null : pesosToCentavos(l.newCost)
+        new_cost: String(l.newCost).trim() === '' ? null : pesosToCentavos(l.newCost)
       }))
     })
     toast.success(`Received ${lines.value.length} line(s) — ${refNo.value}`)

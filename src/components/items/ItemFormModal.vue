@@ -119,7 +119,8 @@ async function save(): Promise<void> {
       unit: form.unit,
       cost_price: pesosToCentavos(form.cost),
       sell_price: pesosToCentavos(form.sell),
-      wholesale_price: form.wholesale.trim() === '' ? null : pesosToCentavos(form.wholesale),
+      // v-model on number inputs casts typed values to number — stringify first.
+      wholesale_price: String(form.wholesale).trim() === '' ? null : pesosToCentavos(form.wholesale),
       reorder_level: Number(form.reorder_level) || 0,
       tax_type: form.tax_type,
       active: form.active ? 1 : 0,
