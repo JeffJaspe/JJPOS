@@ -36,6 +36,10 @@ Full POS: scan/search → cart → discounts/promos/vouchers → payment → rec
 - **Vouchers tab** (`manage_vouchers` only): batch issue (1–100) with `9`-prefixed EAN-13 codes from a dedicated sequence (can't collide with `2`-prefixed item barcodes), optional expiry, label printing; cancel only while active; issue/cancel audit-logged.
 - `settings:get`/`settings:set` IPC (set requires `manage_settings`; sequence counters protected).
 
+### Fixes after release
+
+- **Modals invisible in fullscreen (Jun 13)**: fullscreen was requested on the POS element, but modals/toasts teleport to `<body>` — outside a fullscreened sub-element the browser doesn't render them. Now fullscreen goes on `documentElement` and the shell hides its sidebar/topbar via a `ui.kiosk` flag (stores/ui.ts), so body-teleported overlays render normally. Leaving the POS view exits kiosk mode.
+
 ### Notes / deferred
 
 - Stock may go negative on sale (small-store reality); Phase 4 adjustments/stocktake correct it.

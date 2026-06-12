@@ -7,6 +7,7 @@ import AppModal from '@/components/ui/AppModal.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { useCartStore } from '@/stores/cart'
 import { useSettingsStore } from '@/stores/settings'
+import { useUiStore } from '@/stores/ui'
 import { useToast } from '@/composables/useToast'
 import { usePermissions } from '@/composables/usePermissions'
 import { centavosToInput, formatPeso, pesosToCentavos } from '@/utils/money'
@@ -210,17 +211,20 @@ function onRecalled(payload: string): void {
 }
 
 // -- Fullscreen & keyboard ------------------------------------------------------------
+// Fullscreen goes on documentElement (not the POS element) so body-teleported
+// modals and toasts keep rendering; the shell hides its chrome via ui.kiosk.
 
-const root = ref<HTMLElement | null>(null)
+const ui = useUiStore()
 const isFullscreen = ref(false)
 
 function toggleFullscreen(): void {
   if (document.fullscreenElement) document.exitFullscreen()
-  else root.value?.requestFullscreen()
+  else document.documentElement.requestFullscreen()
 }
 
 function onFullscreenChange(): void {
   isFullscreen.value = document.fullscreenElement !== null
+  ui.kiosk = isFullscreen.value
 }
 
 function onKeydown(event: KeyboardEvent): void {
@@ -246,6 +250,9 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('fullscreenchange', onFullscreenChange)
   window.removeEventListener('keydown', onKeydown)
+  // Leaving the POS while in kiosk mode: restore the shell chrome.
+  if (document.fullscreenElement) document.exitFullscreen()
+  ui.kiosk = false
 })
 
 /** Scale the giant figures down as the amount grows so they never clip. */
@@ -274,7 +281,7 @@ const changeClass = computed(() => {
 </script>
 
 <template>
-  <div ref="root" class="flex min-h-0 flex-1 flex-col gap-3 bg-gray-100" :class="{ 'p-4': isFullscreen }">
+  <div class="flex min-h-0 flex-1 flex-col gap-3 bg-gray-100">
     <!-- Fullscreen mini header -->
     <div v-if="isFullscreen" class="flex items-center justify-between">
       <span class="text-lg font-semibold text-gray-700">{{ settings.branding.app_name }} — Point of Sale</span>

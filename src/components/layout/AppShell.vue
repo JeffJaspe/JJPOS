@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
+import { useUiStore } from '@/stores/ui'
 import AppIcon from '@/components/ui/AppIcon.vue'
 
 interface MenuItem {
@@ -24,6 +25,7 @@ const MENU_ITEMS: MenuItem[] = [
 
 const auth = useAuthStore()
 const settings = useSettingsStore()
+const ui = useUiStore()
 const route = useRoute()
 const router = useRouter()
 
@@ -44,8 +46,9 @@ async function logout(): Promise<void> {
 
 <template>
   <div class="flex h-screen overflow-hidden bg-gray-100 text-gray-900">
-    <!-- Sidebar -->
+    <!-- Sidebar (hidden in POS kiosk fullscreen) -->
     <aside
+      v-show="!ui.kiosk"
       class="flex flex-col bg-gray-900 text-gray-300 transition-all duration-200 ease-in-out"
       :class="collapsed ? 'w-16' : 'w-60'"
     >
@@ -104,7 +107,10 @@ async function logout(): Promise<void> {
 
     <!-- Main column -->
     <div class="flex min-w-0 flex-1 flex-col">
-      <header class="flex h-14 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4">
+      <header
+        v-show="!ui.kiosk"
+        class="flex h-14 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4"
+      >
         <button
           class="rounded-md p-2 text-gray-600 transition-transform duration-100 hover:bg-gray-100 active:scale-[0.98]"
           aria-label="Toggle sidebar"
@@ -122,7 +128,10 @@ async function logout(): Promise<void> {
         </div>
       </header>
 
-      <main class="flex min-h-0 flex-1 flex-col overflow-y-auto p-6">
+      <main
+        class="flex min-h-0 flex-1 flex-col overflow-y-auto"
+        :class="ui.kiosk ? 'p-4' : 'p-6'"
+      >
         <RouterView v-slot="{ Component }">
           <Transition name="page" mode="out-in">
             <component :is="Component" />
