@@ -38,6 +38,12 @@ This print pipeline (hidden window + @page) is the foundation for Phase 3 receip
 
 POS screen (scan/search, cart, discounts, cash payment, change), receipt printing, stock deduction via `stock_movements`, hold/recall, void with permission.
 
+Scope additions agreed Jun 13, 2026 (see PLAN §3.2):
+- Fullscreen toggle (F11/button) for a kiosk-style cashier view.
+- Giant total/change display readable from ~2 meters.
+- Voucher barcodes: scan → validate → deduct from total, redeemed atomically with the sale (`vouchers` table, `sales.voucher_discount`).
+- Inline supervisor override for voids (supervisor credentials without cashier logout, both users audit-logged).
+
 ---
 
 ## Phase 1 — Foundation ✅ (Jun 12, 2026)

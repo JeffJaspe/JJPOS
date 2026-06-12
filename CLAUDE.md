@@ -53,6 +53,9 @@ docs/PLAN.md       full feature plan and schema
 
 - Collapsible sidebar (full ↔ icon-only) toggled by a burger button; active accent color and logo come from the `branding` table.
 - POS screen is keyboard/barcode-first: a focused input captures scans (scanner sends code + Enter). Support hold/recall, split payment, charge-to-account.
+- POS screen supports true fullscreen (F11/button, kiosk-style). The amount to pay (and change due) is displayed huge — readable from ~2 meters.
+- Scans that don't match an item are checked against voucher codes; a valid voucher deducts from the total and is redeemed atomically with the sale.
+- Voids by users without permission go through an inline supervisor-override prompt (supervisor credentials, no logout); overrides are audit-logged with both users.
 - Use Tailwind utilities; keep components small and typed (TypeScript everywhere).
 
 ## Animation & feel

@@ -48,12 +48,15 @@ A standalone desktop Point-of-Sale system built with Electron, featuring invento
 ### 3.2 POS / Sales Screen
 - Barcode-first workflow: scan → item added → quantity editable
 - Manual search by name/SKU with keyboard shortcuts (F-keys for speed)
+- **Fullscreen mode**: the POS screen can toggle true fullscreen (F11 or on-screen button) — chrome-free kiosk view for the cashier station
+- **Giant total display**: the amount to pay is rendered huge — readable from ~2 meters — so the customer can verify it at a glance; change due gets the same treatment after payment
 - Cart panel: qty, price override (permission-gated), line discount, remove
 - Discounts: per-line and whole-transaction (% or fixed); senior/PWD discount preset if Philippine compliance is needed
+- **Vouchers**: scan a voucher barcode at POS → validated (active, not expired, not yet redeemed) and its value deducted from the total; the voucher is marked redeemed atomically with the sale and the redemption is recorded on the sale
 - Payment: cash (with change computation), card, GCash/e-wallet, split payment, **charge to account (credit sale → ledger)**
 - Hold/recall transactions
 - Receipt printing (thermal 58/80mm) + reprint
-- Void/return flow (admin PIN required), returns restock inventory
+- **Void with supervisor override**: if the cashier lacks the void permission, a supervisor/admin approves inline by entering their credentials (PIN-style prompt) without logging the cashier out; the audit log records who approved and for whom. Returns restock inventory
 - Offline by design — no internet dependency
 
 ### 3.3 Inventory
@@ -106,11 +109,15 @@ customers(id, code, name, contact, address, credit_limit,
           terms_days, active)
 
 sales(id, sale_no, datetime, customer_id NULL, user_id, subtotal,
-      discount, tax, total, payment_type, amount_paid, change,
-      status [completed|voided|held])
+      discount, voucher_discount, tax, total, payment_type,
+      amount_paid, change, status [completed|voided|held])
 sale_items(id, sale_id, item_id, qty, price, cost_at_sale,
            line_discount, line_total)
 payments(id, sale_id, method, amount)   -- supports split payment
+
+vouchers(id, code UNIQUE, type [fixed|percent], value,
+      expires_at NULL, status [active|redeemed|cancelled],
+      redeemed_sale_id NULL, redeemed_at NULL, note, created_at)
 
 stock_movements(id, item_id, datetime, type
       [sale|return|stock_in|adjustment|count],
@@ -130,7 +137,7 @@ Stock on hand = `SUM(qty_change)` from `stock_movements` (or maintain a cached `
 ## 5. Barcode Handling Details
 
 - **Scanning:** USB scanners type the code + Enter. Capture with a global focused input on the POS screen; debounce-detect scanner speed vs. human typing for scan-anywhere behavior.
-- **Lookup:** match against `item_barcodes.barcode` (exact, indexed).
+- **Lookup:** match against `item_barcodes.barcode` (exact, indexed). At POS, a scan that doesn't match an item is checked against `vouchers.code` — voucher scans apply as a deduction instead of adding a line.
 - **Generating:** for unlabeled items, generate EAN-13 (with check digit) or Code 128 from an internal sequence; render with `jsbarcode` and print on label stock.
 - **Weighted items (optional):** support scale barcodes (prefix 2 + item code + embedded weight/price).
 
@@ -186,8 +193,10 @@ pos-app/
 
 **Phase 3 — POS Core (week 3–5)**
 - POS screen: scan/search, cart, discounts, cash payment, change
+- Fullscreen toggle + giant 2-meters-readable total/change display
+- Voucher scan & redemption (deduct from total, atomic with sale)
 - Receipt printing, stock deduction via `stock_movements`
-- Hold/recall, void with permission
+- Hold/recall, void with permission + inline supervisor override (audited)
 
 **Phase 4 — Inventory (week 5–6)**
 - Stock-in, adjustments, movement history, low-stock alerts, stocktake
