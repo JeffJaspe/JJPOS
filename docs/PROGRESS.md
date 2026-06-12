@@ -19,6 +19,17 @@ Items, Customers, Categories, and Suppliers CRUD, with barcode assignment/genera
 2. **Reactive Proxy can't cross contextBridge** — sending `form.barcodes` (Vue reactive array) threw "An object could not be cloned"; plain-copy before IPC.
 3. Removed default Electron menu (`Menu.setApplicationMenu(null)`) — kiosk app; Alt accelerator interfered with keyboard-first flows.
 
+### Label printing rework (Jun 13, 2026)
+
+The first label implementation printed the app window itself (the modal is teleported to `<body>`, so the hide-the-app print CSS missed it) and had no preview. Replaced with a proper pipeline:
+
+- Renderer builds a **self-contained HTML document** per job: `@page { size: <W>mm <H>mm; margin: 0 }`, one label per page — what dedicated label printer drivers (Zebra/TSC-style) expect. Label W/H configurable in the modal (default 50×30 mm, persisted per terminal).
+- Main process renders it in a **hidden BrowserWindow**: `print:html` sends to a printer through the **system print dialog** (pick the barcode printer; cancel returns false, not an error), `print:previewPdf` returns the exact paginated PDF (verified MediaBox 50×30 mm).
+- In-modal **live preview** uses the same document via iframe `srcdoc` (same engine that prints = faithful), with page outlines. Chromium's PDF viewer can't render blob/data PDFs in iframes, so the PDF path is print/export-only.
+- Barcode SVGs are serialized with a `viewBox` (scalable) instead of fixed px.
+
+This print pipeline (hidden window + @page) is the foundation for Phase 3 receipts.
+
 ### Dev affordance
 
 `JJPOS_DEBUG_PORT=9222 npm run dev` exposes CDP for E2E driving/inspection. Never set in production.

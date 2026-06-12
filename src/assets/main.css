@@ -91,22 +91,6 @@ body {
   transform: translateX(8px);
 }
 
-/*
- * Printing: the label print area is teleported to <body> outside #app.
- * On screen it stays hidden; on paper it is the only thing visible.
- */
-.print-area {
-  display: none;
-}
-@media print {
-  #app {
-    display: none !important;
-  }
-  .print-area {
-    display: block;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

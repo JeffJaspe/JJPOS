@@ -54,6 +54,12 @@ const api = {
     create: (name: string, contact: string) => invoke<number>('suppliers:create', { name, contact }),
     update: (id: number, name: string, contact: string, active: number) =>
       invoke<true>('suppliers:update', { id, name, contact, active })
+  },
+  print: {
+    /** Base64 PDF of the document, paginated exactly as it will print. */
+    previewPdf: (html: string) => invoke<string>('print:previewPdf', { html }),
+    /** Returns false if the user cancelled the print dialog. */
+    html: (html: string) => invoke<boolean>('print:html', { html })
   }
 }
 
