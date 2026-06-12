@@ -1,0 +1,57 @@
+@import 'tailwindcss';
+
+/*
+ * The accent color is branding-driven: the settings store writes --accent on
+ * <html> at runtime; bg-accent / text-accent / etc. pick it up through here.
+ */
+@theme {
+  --color-accent: var(--accent, #4f46e5);
+}
+
+:root {
+  --accent: #4f46e5;
+}
+
+html,
+body {
+  height: 100%;
+  overscroll-behavior: none;
+}
+
+/* Router page transition: subtle fade + 8px slide, 150ms (see CLAUDE.md). */
+.page-enter-active,
+.page-leave-active {
+  transition:
+    opacity 150ms ease,
+    transform 150ms ease;
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+/* Toast slide in from the right. */
+.toast-enter-active,
+.toast-leave-active {
+  transition:
+    opacity 200ms ease,
+    transform 200ms ease;
+}
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateX(16px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
