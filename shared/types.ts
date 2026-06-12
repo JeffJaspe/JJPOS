@@ -295,6 +295,75 @@ export interface HeldSale {
   cashier: string
 }
 
+// ---------------------------------------------------------------------------
+// Inventory
+// ---------------------------------------------------------------------------
+
+export interface StockInLine {
+  item_id: number
+  qty: number
+  /** New cost price (centavos) to record on the item, or null to keep current. */
+  new_cost: number | null
+}
+
+export interface StockInInput {
+  supplier_id: number | null
+  ref_no: string
+  note: string
+  lines: StockInLine[]
+}
+
+export type AdjustReason = 'damage' | 'loss' | 'expired' | 'count_correction' | 'other'
+
+export interface AdjustInput {
+  item_id: number
+  /** Signed quantity change: negative removes stock. */
+  qty_change: number
+  reason: AdjustReason
+  note: string
+}
+
+export interface MovementQuery {
+  itemId?: number | null
+  type?: string
+  limit?: number
+}
+
+export interface MovementRow {
+  id: number
+  datetime: string
+  item_name: string
+  sku: string
+  type: string
+  qty_change: number
+  note: string
+  user: string
+}
+
+export interface StocktakeLine {
+  item_id: number
+  counted_qty: number
+}
+
+export interface StocktakeInput {
+  note: string
+  lines: StocktakeLine[]
+}
+
+export interface StocktakeResult {
+  adjusted: number
+  unchanged: number
+}
+
+export interface LowStockRow {
+  id: number
+  sku: string
+  name: string
+  unit: string
+  qty_on_hand: number
+  reorder_level: number
+}
+
 /** Key/value rows from the branding table. */
 export interface Branding {
   app_name: string

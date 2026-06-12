@@ -8,6 +8,7 @@ import { registerPromoHandlers } from './promos'
 import { registerVoucherHandlers } from './vouchers'
 import { registerSalesHandlers } from './sales'
 import { registerSettingsHandlers } from './settings'
+import { registerInventoryHandlers } from './inventory'
 
 /** One register function per domain — new domains (sales, inventory, ...) plug in here. */
 export function registerIpcHandlers(): void {
@@ -21,4 +22,5 @@ export function registerIpcHandlers(): void {
   registerVoucherHandlers()
   registerSalesHandlers()
   registerSettingsHandlers()
+  registerInventoryHandlers()
 }

@@ -1,5 +1,25 @@
 # Progress
 
+## Phase 4 — Inventory ✅ (Jun 13, 2026)
+
+Stock-in, adjustments, stocktake, movement history, and low-stock view. No schema changes needed — everything rides on `stock_movements` + `items.qty_on_hand` from migration 001. Verified end-to-end via CDP (UI receive +24 w/ cost update, −3 damage adjustment, stocktake to a counted figure, low-stock threshold appearing/clearing).
+
+### What's in place
+
+- **Inventory view with tabs**: Stock In / Adjust / Stocktake (require `stock_adjust`; tabs hidden otherwise) + Movements / Low Stock (any inventory-menu holder).
+- **Stock In**: supplier (optional) + required reference no. (DR/invoice) + scan-to-add lines; per-line qty and optional new unit cost (updates `items.cost_price` — future sales capture the new cost, history keeps `cost_at_sale`); one transaction; audit-logged.
+- **Adjust**: single item, signed qty change, reason codes (damage / loss / expired / count correction / other) + note; shows resulting on-hand before committing; audit-logged.
+- **Stocktake**: scan-as-you-count (repeat scans increment), editable counted qty, live variance column; commit writes a `count` movement for each variance and sets `qty_on_hand` to the counted figure; matched lines untouched; audit-logged.
+- **Movements**: filterable history (type, item), color-coded types, signed quantities, note + user — the full trail including sales/void returns from Phase 3.
+- **Low Stock**: items at/below reorder level with a suggested order quantity (2× reorder − on hand).
+- Shared `ItemPicker` component (scan/search dropdown) reused across panels.
+
+### Next: Phase 5 — Ledger & Credit Sales
+
+Collections screen, customer statements (SOA), aging — charge-to-account at POS already posts ledger debits since Phase 3.
+
+---
+
 ## Phase 3 — POS Core ✅ (Jun 13, 2026)
 
 Full POS: scan/search → cart → discounts/promos/vouchers → payment → receipt → stock deduction, plus hold/recall, void with supervisor override, fullscreen kiosk view, and the Promos/Vouchers management tabs. Verified end-to-end over CDP by driving the real UI (sale SI-000001: 2 × promo-priced item − ₱20 voucher = ₱1.60, then voided — stock and voucher restored).

@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
+  AdjustInput,
   Branding,
   Category,
   CustomerInput,
@@ -11,6 +12,9 @@ import type {
   ItemInput,
   ItemListQuery,
   ItemRow,
+  LowStockRow,
+  MovementQuery,
+  MovementRow,
   PosItem,
   PosScanResult,
   Promo,
@@ -20,6 +24,9 @@ import type {
   SaleInput,
   SaleReceipt,
   SessionUser,
+  StockInInput,
+  StocktakeInput,
+  StocktakeResult,
   Supplier,
   VoidSaleInput,
   Voucher,
@@ -105,6 +112,13 @@ const api = {
   settings: {
     get: () => invoke<Record<string, string>>('settings:get'),
     set: (key: string, value: string) => invoke<true>('settings:set', { key, value })
+  },
+  inventory: {
+    stockIn: (input: StockInInput) => invoke<true>('inventory:stockIn', input),
+    adjust: (input: AdjustInput) => invoke<true>('inventory:adjust', input),
+    stocktake: (input: StocktakeInput) => invoke<StocktakeResult>('inventory:stocktake', input),
+    movements: (query: MovementQuery = {}) => invoke<MovementRow[]>('inventory:movements', query),
+    lowStock: () => invoke<LowStockRow[]>('inventory:lowStock')
   }
 }
 
