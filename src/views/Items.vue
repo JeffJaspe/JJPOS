@@ -4,6 +4,8 @@ import ItemFormModal from '@/components/items/ItemFormModal.vue'
 import LabelPrintModal from '@/components/items/LabelPrintModal.vue'
 import CategoriesPanel from '@/components/items/CategoriesPanel.vue'
 import SuppliersPanel from '@/components/items/SuppliersPanel.vue'
+import PromosPanel from '@/components/items/PromosPanel.vue'
+import VouchersPanel from '@/components/items/VouchersPanel.vue'
 import { usePermissions } from '@/composables/usePermissions'
 import { formatPeso } from '@/utils/money'
 import type { Category, ItemRow } from '../../shared/types'
@@ -11,8 +13,10 @@ import type { Category, ItemRow } from '../../shared/types'
 const { can } = usePermissions()
 const canEdit = can('edit_items')
 
-const TABS = ['Items', 'Categories', 'Suppliers'] as const
-const tab = ref<(typeof TABS)[number]>('Items')
+type Tab = 'Items' | 'Categories' | 'Suppliers' | 'Promos' | 'Vouchers'
+const TABS: Tab[] = ['Items', 'Categories', 'Suppliers', 'Promos']
+if (can('manage_vouchers')) TABS.push('Vouchers')
+const tab = ref<Tab>('Items')
 
 const items = ref<ItemRow[]>([])
 const categories = ref<Category[]>([])
@@ -177,7 +181,9 @@ function lowStock(item: ItemRow): boolean {
     </template>
 
     <CategoriesPanel v-else-if="tab === 'Categories'" @changed="loadCategories" />
-    <SuppliersPanel v-else />
+    <SuppliersPanel v-else-if="tab === 'Suppliers'" />
+    <PromosPanel v-else-if="tab === 'Promos'" />
+    <VouchersPanel v-else />
 
     <ItemFormModal
       :open="formOpen"

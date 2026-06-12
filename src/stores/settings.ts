@@ -11,7 +11,10 @@ const DEFAULT_BRANDING: Branding = {
 export const useSettingsStore = defineStore('settings', {
   state: () => ({
     branding: { ...DEFAULT_BRANDING },
-    brandingLoaded: false
+    brandingLoaded: false,
+    /** settings table key/values (store name, VAT rate, receipt config, ...). */
+    app: {} as Record<string, string>,
+    appLoaded: false
   }),
 
   actions: {
@@ -20,6 +23,12 @@ export const useSettingsStore = defineStore('settings', {
       this.branding = { ...DEFAULT_BRANDING, ...(await window.api.branding.get()) }
       this.brandingLoaded = true
       this.applyBranding()
+    },
+
+    async loadAppSettings(): Promise<void> {
+      if (this.appLoaded) return
+      this.app = await window.api.settings.get()
+      this.appLoaded = true
     },
 
     applyBranding(): void {

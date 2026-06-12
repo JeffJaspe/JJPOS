@@ -1,5 +1,34 @@
 # Progress
 
+## Phase 3 — POS Core ✅ (Jun 13, 2026)
+
+Full POS: scan/search → cart → discounts/promos/vouchers → payment → receipt → stock deduction, plus hold/recall, void with supervisor override, fullscreen kiosk view, and the Promos/Vouchers management tabs. Verified end-to-end over CDP by driving the real UI (sale SI-000001: 2 × promo-priced item − ₱20 voucher = ₱1.60, then voided — stock and voucher restored).
+
+### What's in place
+
+- **POS screen** (`Pos.vue`, cart in Pinia `stores/cart.ts`): one input handles barcode scans, voucher scans, and name/SKU search (single result auto-adds); cart with qty edit, permission-gated price override (audited), per-line ₱ discount, transaction discount ("10%" or amount in one input); TransitionGroup rows.
+- **Giant displays**: total panel readable from ~2 m (font auto-shrinks as digits grow so it never clips); full-screen CHANGE overlay after payment; true fullscreen kiosk toggle (F11/button, wider total panel). Keyboard: F9 pay, F10 hold, F11 fullscreen.
+- **Sales engine** (`sales:complete`): all money math recomputed server-side in one transaction — promo re-resolution (price must match server promo price unless `price_override`), line/txn discounts, voucher re-validation + atomic redemption, VAT-inclusive tax back-out (txn+voucher discounts shared pro-rata across the vatable base), split payments, charge-to-account with ledger debit + credit-limit block, stock movements + `qty_on_hand`, sequential `SI-` sale numbers.
+- **Void** (`sales:void`): own `void` permission or inline supervisor credentials (`approve_voids`), reason required; restores stock (return movements), reverses ledger charges, reactivates redeemed vouchers; audit logs both users.
+- **Hold/recall**: `held_sales` table stores JSON cart snapshots (no sale_no, no stock impact); recall is delete+restore in one transaction.
+- **Receipts**: `utils/receipt.ts` builds a thermal-width doc (58/80 mm from `receipt_width_mm`); `print:receipt` measures content height, sizes @page to it, and prints silently to `receipt_printer` (or system default) — checkout never blocks on a dialog; failures toast without affecting the sale. Reprint-last button. `receipt_auto_print` setting can disable auto print.
+- **Promos tab**: CRUD with type (% / amount off / fixed price), optional schedule (local ↔ UTC converted), multi-item picker; deactivate-not-delete; POS picks the lowest resulting price; `sale_items.promo_id` records what applied.
+- **Vouchers tab** (`manage_vouchers` only): batch issue (1–100) with `9`-prefixed EAN-13 codes from a dedicated sequence (can't collide with `2`-prefixed item barcodes), optional expiry, label printing; cancel only while active; issue/cancel audit-logged.
+- `settings:get`/`settings:set` IPC (set requires `manage_settings`; sequence counters protected).
+
+### Notes / deferred
+
+- Stock may go negative on sale (small-store reality); Phase 4 adjustments/stocktake correct it.
+- Supervisor-override UI path exercised by review only — needs a second (cashier) user account, which arrives with user management in Phase 6.
+- ESC/POS raw printing not used; receipts go through Windows printer drivers (works for receipt printers with a driver). Revisit only if a driverless printer shows up.
+- Test data left in the DB on purpose (named "Test Promo 10%", two ₱20 e2e vouchers, one voided sale) — usable as demo data, safe to deactivate/cancel.
+
+### Next: Phase 4 — Inventory
+
+Stock-in, adjustments with reason codes, movement history, low-stock alerts, stocktake.
+
+---
+
 ## Phase 2 — Masterfiles ✅ (Jun 12, 2026)
 
 Items, Customers, Categories, and Suppliers CRUD, with barcode assignment/generation and label printing. Verified end-to-end by driving the real UI over the Chrome DevTools Protocol (login → create item → generate barcode → save → edit → labels → category/supplier → customer).

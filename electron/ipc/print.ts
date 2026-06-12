@@ -1,4 +1,5 @@
 import { BrowserWindow } from 'electron'
+import { getDb } from '../db'
 import { handle } from './handle'
 import { requireAuth } from './session'
 
@@ -56,5 +57,56 @@ export function registerPrintHandlers(): void {
         }
       )
     })
+  })
+
+  /**
+   * Receipt: prints silently to the configured receipt printer (or the system
+   * default). The page height is measured from the content so thermal-roll
+   * drivers cut right after the footer. Checkout never blocks on a dialog.
+   */
+  handle<{ html: string }, boolean>('print:receipt', async ({ html }) => {
+    requireAuth()
+    const db = getDb()
+    const widthMm = Number(
+      (db.prepare("SELECT value FROM settings WHERE key = 'receipt_width_mm'").get() as
+        | { value: string }
+        | undefined)?.value ?? 80
+    )
+    const printer = (
+      db.prepare("SELECT value FROM settings WHERE key = 'receipt_printer'").get() as
+        | { value: string }
+        | undefined
+    )?.value
+
+    const win = await loadHidden(html)
+    try {
+      const heightPx = (await win.webContents.executeJavaScript(
+        'document.body.scrollHeight'
+      )) as number
+      const heightMm = Math.ceil((heightPx * 25.4) / 96) + 4
+      await win.webContents.executeJavaScript(
+        `{ const s = document.createElement('style');
+           s.textContent = '@page { size: ${widthMm}mm ${heightMm}mm; margin: 0; }';
+           document.head.appendChild(s) }`
+      )
+      return await new Promise<boolean>((resolve, reject) => {
+        win.webContents.print(
+          {
+            silent: true,
+            printBackground: true,
+            margins: { marginType: 'none' },
+            ...(printer ? { deviceName: printer } : {})
+          },
+          (success, failureReason) => {
+            win.destroy()
+            if (success) resolve(true)
+            else reject(new Error(failureReason || 'Receipt printer unavailable'))
+          }
+        )
+      })
+    } catch (err) {
+      if (!win.isDestroyed()) win.destroy()
+      throw err
+    }
   })
 }

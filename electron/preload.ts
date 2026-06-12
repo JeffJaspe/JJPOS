@@ -5,13 +5,26 @@ import type {
   CustomerInput,
   CustomerListQuery,
   CustomerRow,
+  HeldSale,
   IpcResult,
   ItemDetail,
   ItemInput,
   ItemListQuery,
   ItemRow,
+  PosItem,
+  PosScanResult,
+  Promo,
+  PromoDetail,
+  PromoInput,
+  RecentSale,
+  SaleInput,
+  SaleReceipt,
   SessionUser,
-  Supplier
+  Supplier,
+  VoidSaleInput,
+  Voucher,
+  VoucherCreateInput,
+  VoucherStatus
 } from '../shared/types'
 
 /** Unwrap the IpcResult envelope so renderer callers get plain data or a thrown Error. */
@@ -59,7 +72,39 @@ const api = {
     /** Base64 PDF of the document, paginated exactly as it will print. */
     previewPdf: (html: string) => invoke<string>('print:previewPdf', { html }),
     /** Returns false if the user cancelled the print dialog. */
-    html: (html: string) => invoke<boolean>('print:html', { html })
+    html: (html: string) => invoke<boolean>('print:html', { html }),
+    /** Silent receipt print to the configured/default printer. */
+    receipt: (html: string) => invoke<boolean>('print:receipt', { html })
+  },
+  pos: {
+    scan: (code: string) => invoke<PosScanResult>('pos:scan', code),
+    search: (term: string) => invoke<PosItem[]>('pos:search', term)
+  },
+  sales: {
+    complete: (input: SaleInput) => invoke<SaleReceipt>('sales:complete', input),
+    void: (input: VoidSaleInput) => invoke<SaleReceipt>('sales:void', input),
+    recent: (limit = 30) => invoke<RecentSale[]>('sales:recent', { limit }),
+    get: (id: number) => invoke<SaleReceipt>('sales:get', id),
+    hold: (label: string, payload: string) => invoke<number>('sales:hold', { label, payload }),
+    held: () => invoke<HeldSale[]>('sales:held'),
+    recall: (id: number) => invoke<string>('sales:recall', id),
+    deleteHeld: (id: number) => invoke<true>('sales:deleteHeld', id)
+  },
+  promos: {
+    list: () => invoke<Promo[]>('promos:list'),
+    get: (id: number) => invoke<PromoDetail>('promos:get', id),
+    create: (input: PromoInput) => invoke<number>('promos:create', input),
+    update: (id: number, input: PromoInput) => invoke<true>('promos:update', { id, input }),
+    setActive: (id: number, active: number) => invoke<true>('promos:setActive', { id, active })
+  },
+  vouchers: {
+    list: (status: VoucherStatus | 'all' = 'all') => invoke<Voucher[]>('vouchers:list', { status }),
+    create: (input: VoucherCreateInput) => invoke<Voucher[]>('vouchers:create', input),
+    cancel: (id: number) => invoke<true>('vouchers:cancel', id)
+  },
+  settings: {
+    get: () => invoke<Record<string, string>>('settings:get'),
+    set: (key: string, value: string) => invoke<true>('settings:set', { key, value })
   }
 }
 

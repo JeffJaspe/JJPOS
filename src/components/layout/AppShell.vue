@@ -122,7 +122,7 @@ async function logout(): Promise<void> {
         </div>
       </header>
 
-      <main class="flex-1 overflow-y-auto p-6">
+      <main class="flex min-h-0 flex-1 flex-col overflow-y-auto p-6">
         <RouterView v-slot="{ Component }">
           <Transition name="page" mode="out-in">
             <component :is="Component" />
