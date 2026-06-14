@@ -9,7 +9,35 @@
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && vue-tsc --noEmit -p tsconfig.web.json --composite false",
     "postinstall": "electron-builder install-app-deps",
+    "make-icon": "node scripts/make-icon.mjs",
     "dist": "electron-vite build && electron-builder"
+  },
+  "build": {
+    "appId": "com.jjpos.app",
+    "productName": "JJPOS",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "JJPOS"
+    }
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.0",
@@ -22,6 +50,8 @@
     "electron-vite": "^5.0.0",
     "jsbarcode": "^3.12.3",
     "pinia": "^3.0.4",
+    "png-to-ico": "^3.0.1",
+    "sharp": "^0.35.1",
     "tailwindcss": "^4.3.0",
     "typescript": "^6.0.3",
     "vite": "^7.3.5",
