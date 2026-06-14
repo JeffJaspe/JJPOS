@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import BrandLogo from '@/components/ui/BrandLogo.vue'
 
 interface MenuItem {
   key: string
@@ -49,14 +50,12 @@ async function logout(): Promise<void> {
     <!-- Sidebar (hidden in POS kiosk fullscreen) -->
     <aside
       v-show="!ui.kiosk"
-      class="flex flex-col bg-gray-900 text-gray-300 transition-all duration-200 ease-in-out"
+      class="flex flex-col text-gray-300 transition-all duration-200 ease-in-out"
       :class="collapsed ? 'w-16' : 'w-60'"
+      :style="{ backgroundColor: 'var(--sidebar)' }"
     >
       <div class="flex h-14 items-center gap-3 px-4">
-        <AppIcon
-          :name="settings.branding.logo_value || 'storefront'"
-          class="h-6 w-6 shrink-0 text-accent"
-        />
+        <BrandLogo size-class="h-6 w-6" />
         <span
           class="truncate text-base font-semibold whitespace-nowrap text-white transition-opacity duration-200"
           :class="collapsed ? 'opacity-0' : 'opacity-100'"
@@ -118,7 +117,9 @@ async function logout(): Promise<void> {
         >
           <AppIcon name="menu" />
         </button>
-        <h1 class="text-lg font-semibold">{{ pageTitle }}</h1>
+        <h1 class="text-lg font-semibold">{{ settings.branding.app_name }}</h1>
+        <span class="text-gray-300">/</span>
+        <span class="text-base text-gray-500">{{ pageTitle }}</span>
 
         <div class="ml-auto flex items-center gap-2 text-sm">
           <span class="font-medium">{{ auth.session?.fullName || auth.session?.username }}</span>

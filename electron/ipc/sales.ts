@@ -141,6 +141,9 @@ function loadReceipt(db: Database.Database, saleId: number): SaleReceipt {
     status: sale.status as string,
     customer_name: (sale.customer_name as string | null) ?? null,
     cashier: (sale.cashier_full as string) || (sale.cashier_user as string),
+    sd_type: (sale.sd_type as string) ?? '',
+    sd_name: (sale.sd_name as string) ?? '',
+    sd_id: (sale.sd_id as string) ?? '',
     lines,
     payments
   }
@@ -196,6 +199,9 @@ export function registerSalesHandlers(): void {
     const db = getDb()
     if (!input.lines?.length) throw new Error('Cart is empty')
     if (!input.payments?.length) throw new Error('No payment given')
+    if (user.permissions.includes('require_customer') && !input.customer_id) {
+      throw new Error('A customer is required for every sale on this account')
+    }
 
     const saleId = db.transaction(() => {
       let subtotal = 0
@@ -247,14 +253,52 @@ export function registerSalesHandlers(): void {
       }
 
       const base = subtotal - lineDiscTotal
+      const vatRate = Number(getSetting(db, 'vat_rate') ?? 12)
+      // VAT mode: 'overall' (e.g. restaurants) makes the whole sale vatable,
+      // ignoring per-item flags; 'per_item' (default) uses each item's tax_type.
+      if ((getSetting(db, 'vat_mode') || 'per_item') === 'overall') vatable = base
+
+      // Senior/PWD: a flat 20% transaction discount. VAT still applies and is
+      // reported normally. Captures the presented ID. Replaces a manual discount.
+      const special = input.special_discount
       let txnDisc = 0
-      if (input.discount_type === 'percent') {
+      if (special) {
+        if (special.type !== 'senior' && special.type !== 'pwd') {
+          throw new Error('Invalid special discount type')
+        }
+        if (!special.id?.trim()) throw new Error('Senior/PWD ID number is required')
+        txnDisc = Math.round(base * 0.2)
+      } else if (input.discount_type === 'percent') {
         const pct = Math.min(Math.max(Math.trunc(input.discount_value) || 0, 0), 100)
         txnDisc = Math.round((base * pct) / 100)
       } else if (input.discount_type === 'amount') {
         txnDisc = Math.min(Math.max(Math.trunc(input.discount_value) || 0, 0), base)
       }
       const afterDiscounts = base - txnDisc
+
+      // Manual discounts (line or transaction) are permission-gated. A cashier
+      // without `discount` needs an approving supervisor — validated here so the
+      // UI gate can't be bypassed. Senior/PWD (special) is exempt.
+      if ((lineDiscTotal > 0 || txnDisc > 0) && !user.permissions.includes('discount')) {
+        const ap = input.discount_approver
+        if (!ap?.username || !ap?.password) {
+          throw new Error('Applying a discount needs supervisor approval')
+        }
+        const sup = db
+          .prepare('SELECT username, password_hash, role_id FROM users WHERE username = ? AND active = 1')
+          .get(ap.username) as
+          | { username: string; password_hash: string; role_id: number }
+          | undefined
+        if (!sup || !bcrypt.compareSync(ap.password, sup.password_hash)) {
+          throw new Error('Invalid supervisor credentials for discount')
+        }
+        const perms = (
+          db.prepare('SELECT perm_key FROM role_permissions WHERE role_id = ?').all(sup.role_id) as {
+            perm_key: string
+          }[]
+        ).map((p) => p.perm_key)
+        if (!perms.includes('discount')) throw new Error(`${sup.username} cannot approve discounts`)
+      }
 
       // Vouchers: re-validated inside the transaction; total deduction capped.
       let voucherDisc = 0
@@ -281,7 +325,7 @@ export function registerSalesHandlers(): void {
       let paid = 0
       let chargeAmount = 0
       for (const p of input.payments) {
-        if (!['cash', 'card', 'ewallet', 'charge'].includes(p.method)) {
+        if (!['cash', 'card', 'ewallet', 'gcash', 'paymaya', 'charge'].includes(p.method)) {
           throw new Error('Invalid payment method')
         }
         if (!Number.isInteger(p.amount) || p.amount <= 0) throw new Error('Invalid payment amount')
@@ -312,19 +356,19 @@ export function registerSalesHandlers(): void {
 
       // VAT (prices are VAT-inclusive): share the transaction-level discounts
       // across the vatable portion, then back out the tax for reporting.
-      const vatRate = Number(getSetting(db, 'vat_rate') ?? 12)
       const vatShare = base > 0 ? vatable / base : 0
       const taxedBase = Math.max(vatable - Math.round((txnDisc + voucherDisc) * vatShare), 0)
       const tax = Math.round((taxedBase * vatRate) / (100 + vatRate))
 
       const paymentType = input.payments.length > 1 ? 'split' : input.payments[0].method
-      const saleNo = 'SI-' + String(bumpSequence(db, 'sale_sequence')).padStart(6, '0')
+      const prefix = getSetting(db, 'sale_prefix') || 'SI-'
+      const saleNo = prefix + String(bumpSequence(db, 'sale_sequence')).padStart(6, '0')
 
       const saleInfo = db
         .prepare(
           `INSERT INTO sales (sale_no, customer_id, user_id, subtotal, discount, voucher_discount,
-             tax, total, payment_type, amount_paid, change, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed')`
+             tax, total, payment_type, amount_paid, change, status, sd_type, sd_name, sd_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?)`
         )
         .run(
           saleNo,
@@ -337,7 +381,10 @@ export function registerSalesHandlers(): void {
           total,
           paymentType,
           paid,
-          change
+          change,
+          special ? special.type : '',
+          special ? (special.name ?? '').trim() : '',
+          special ? special.id.trim() : ''
         )
       const saleId = Number(saleInfo.lastInsertRowid)
 
@@ -379,6 +426,15 @@ export function registerSalesHandlers(): void {
 
       for (const detail of overrides) {
         audit(db, user.id, 'price_override', `${saleNo} ${detail}`)
+      }
+
+      if (special) {
+        audit(
+          db,
+          user.id,
+          'senior_pwd_discount',
+          `${saleNo} ${special.type} ID ${special.id.trim()} (${special.name?.trim() || 'n/a'}) -${txnDisc}`
+        )
       }
 
       return saleId

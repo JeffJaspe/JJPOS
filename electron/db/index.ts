@@ -64,10 +64,12 @@ function seedDefaultAdmin(db: Database.Database): void {
   const { n } = db.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }
   if (n > 0) return
 
-  const role = db.prepare("SELECT id FROM roles WHERE name = 'Super admin'").get() as
+  // Find the locked super role by its flag, not its name — the name can be
+  // changed by a migration (004 renames it to "Superadmin").
+  const role = db.prepare('SELECT id FROM roles WHERE locked = 1').get() as
     | { id: number }
     | undefined
-  if (!role) throw new Error('Seed data missing: Super admin role not found')
+  if (!role) throw new Error('Seed data missing: locked super-admin role not found')
 
   db.prepare(
     'INSERT INTO users (username, password_hash, full_name, role_id, active) VALUES (?, ?, ?, ?, 1)'

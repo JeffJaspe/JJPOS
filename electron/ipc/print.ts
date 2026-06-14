@@ -24,6 +24,15 @@ async function loadHidden(html: string): Promise<BrowserWindow> {
 }
 
 export function registerPrintHandlers(): void {
+  /** Installed printers, so Settings can offer a receipt-printer dropdown. */
+  handle<void, { name: string; displayName: string }[]>('print:listPrinters', async () => {
+    requireAuth()
+    const win = BrowserWindow.getFocusedWindow()
+    if (!win) return []
+    const printers = await win.webContents.getPrintersAsync()
+    return printers.map((p) => ({ name: p.name, displayName: p.displayName || p.name }))
+  })
+
   /** Exact-page PDF of what will print, base64-encoded (for in-app preview). */
   handle<{ html: string }, string>('print:previewPdf', async ({ html }) => {
     requireAuth()

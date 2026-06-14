@@ -13,6 +13,8 @@ export interface SessionUser {
   fullName: string
   roleId: number
   roleName: string
+  /** True when the role is the locked, built-in Super admin (full access, role builder). */
+  isSuperAdmin: boolean
   /** Sidebar menu keys visible to this role (from role_menus). */
   menus: string[]
   /** Granular action keys granted to this role (from role_permissions). */
@@ -36,17 +38,51 @@ export const PERM_KEYS = [
   'sell',
   'void',
   'price_override',
+  'discount',
+  'require_customer',
   'edit_items',
   'edit_customers',
+  'manage_ledger',
   'manage_vouchers',
   'stock_adjust',
   'approve_voids',
   'export_reports',
+  'view_audit',
   'manage_branding',
   'manage_users',
   'manage_settings'
 ] as const
 export type PermKey = (typeof PERM_KEYS)[number]
+
+/** Human labels for the role builder — keep in sync with MENU_KEYS / PERM_KEYS. */
+export const MENU_LABELS: Record<MenuKey, string> = {
+  pos: 'Point of Sale',
+  items: 'Items',
+  customers: 'Customers',
+  inventory: 'Inventory',
+  ledger: 'Customer Ledger',
+  reports: 'Reports',
+  settings: 'Settings'
+}
+
+export const PERM_LABELS: Record<PermKey, string> = {
+  sell: 'Complete sales',
+  void: 'Void sales',
+  price_override: 'Override prices at POS',
+  discount: 'Apply discounts (line & transaction)',
+  require_customer: 'Require a customer on every sale',
+  edit_items: 'Edit items, categories, promos',
+  edit_customers: 'Edit customers',
+  manage_ledger: 'Record AR payments & adjustments',
+  manage_vouchers: 'Issue / cancel vouchers',
+  stock_adjust: 'Receive & adjust stock',
+  approve_voids: 'Approve voids (supervisor)',
+  export_reports: 'View & export reports',
+  view_audit: 'View audit & security logs',
+  manage_branding: 'Manage branding',
+  manage_users: 'Manage user accounts',
+  manage_settings: 'Manage store settings'
+}
 
 // ---------------------------------------------------------------------------
 // Masterfiles
@@ -226,17 +262,32 @@ export interface CartLineInput {
   line_discount: number
 }
 
-export type PaymentMethod = 'cash' | 'card' | 'ewallet' | 'charge'
+export type PaymentMethod = 'cash' | 'card' | 'ewallet' | 'gcash' | 'paymaya' | 'charge'
 
 export interface PaymentInput {
   method: PaymentMethod
   amount: number
 }
 
+export type SpecialDiscountType = 'senior' | 'pwd'
+
+/** Senior-citizen / PWD discount: applied per transaction, captures the ID. */
+export interface SpecialDiscount {
+  type: SpecialDiscountType
+  /** ID holder's name. */
+  name: string
+  /** OSCA / PWD ID number presented. */
+  id: string
+}
+
 export interface SaleInput {
   lines: CartLineInput[]
   discount_type: 'none' | 'percent' | 'amount'
   discount_value: number
+  /** Senior/PWD discount (flat 20%). When set, it replaces the manual discount. */
+  special_discount: SpecialDiscount | null
+  /** Supervisor credentials approving a manual discount when the cashier lacks `discount`. */
+  discount_approver: { username: string; password: string } | null
   voucher_codes: string[]
   customer_id: number | null
   payments: PaymentInput[]
@@ -267,6 +318,10 @@ export interface SaleReceipt {
   status: string
   customer_name: string | null
   cashier: string
+  /** '' for a normal sale, else 'senior' / 'pwd'. */
+  sd_type: string
+  sd_name: string
+  sd_id: string
   lines: SaleReceiptLine[]
   payments: PaymentInput[]
 }
@@ -364,11 +419,281 @@ export interface LowStockRow {
   reorder_level: number
 }
 
+// ---------------------------------------------------------------------------
+// Receipt template (configurable layout)
+// ---------------------------------------------------------------------------
+
+/** Element kinds a receipt can contain. Data elements pull from the sale; the rest are static. */
+export type ReceiptElementType =
+  | 'logo'
+  | 'store_name'
+  | 'store_address'
+  | 'header'
+  | 'sale_info'
+  | 'cashier'
+  | 'customer'
+  | 'sd_info'
+  | 'items'
+  | 'totals'
+  | 'payments'
+  | 'change'
+  | 'footer'
+  | 'custom'
+  | 'divider'
+  | 'spacer'
+
+export interface ReceiptElement {
+  id: string
+  type: ReceiptElementType
+  enabled: boolean
+  align?: 'left' | 'center' | 'right'
+  bold?: boolean
+  /** Text for 'custom'; ignored otherwise. */
+  text?: string
+}
+
+export interface ReceiptTemplate {
+  /** Printable width in millimetres (e.g. 58 or 80). */
+  width_mm: number
+  elements: ReceiptElement[]
+}
+
 /** Key/value rows from the branding table. */
 export interface Branding {
   app_name: string
+  /** Primary brand color — buttons, links, active nav, focus rings (CSS --accent). */
   accent_color: string
-  /** 'icon' (built-in icon name in logo_value) or 'image' (file path) — image support lands in Phase 6. */
+  /** Secondary color — the logo mark (CSS --accent-2). Empty falls back to accent_color. */
+  accent_color_2: string
+  /** Sidebar background color (CSS --sidebar). */
+  sidebar_color: string
+  /** 'icon' (built-in icon name in logo_value) or 'image' (data URL in logo_value). */
   logo_type: string
   logo_value: string
+  /** App/window favicon as a data URL (PNG or SVG). Empty = use the bundled default. */
+  favicon: string
+}
+
+// ---------------------------------------------------------------------------
+// Users & roles (admin)
+// ---------------------------------------------------------------------------
+
+/** A user account as listed in Settings → Users (never includes the password hash). */
+export interface UserRow {
+  id: number
+  username: string
+  full_name: string
+  role_id: number
+  role_name: string
+  active: number
+  created_at: string
+}
+
+export interface UserCreateInput {
+  username: string
+  full_name: string
+  password: string
+  role_id: number
+  active: boolean
+}
+
+/** Edit a user's profile/role/active flag — password is changed separately. */
+export interface UserUpdateInput {
+  full_name: string
+  role_id: number
+  active: boolean
+}
+
+/** A role with its assigned menus, permissions, and how many users hold it. */
+export interface RoleRow {
+  id: number
+  name: string
+  is_system: number
+  locked: number
+  user_count: number
+  menus: string[]
+  permissions: string[]
+}
+
+export interface RoleInput {
+  name: string
+  menus: string[]
+  permissions: string[]
+}
+
+// ---------------------------------------------------------------------------
+// Reports
+// ---------------------------------------------------------------------------
+// All money values are centavos. Date bounds are UTC; `toUtc` is exclusive.
+
+export interface ReportRange {
+  fromUtc: string
+  toUtc: string
+}
+
+export interface PaymentBreakdown {
+  method: string
+  amount: number
+  count: number
+}
+
+export interface CashierBreakdown {
+  user: string
+  net: number
+  count: number
+}
+
+/** Z-reading style daily/period summary. */
+export interface DailySalesReport {
+  count: number
+  gross: number
+  discount: number
+  voucherDiscount: number
+  tax: number
+  net: number
+  voidedCount: number
+  voidedAmount: number
+  byPayment: PaymentBreakdown[]
+  byCashier: CashierBreakdown[]
+}
+
+export interface SalesByItemRow {
+  item_id: number
+  sku: string
+  name: string
+  qty: number
+  sales: number
+  cost: number
+  profit: number
+}
+
+export interface SalesByCategoryRow {
+  category: string
+  qty: number
+  sales: number
+  cost: number
+  profit: number
+}
+
+export interface InventoryValuationRow {
+  id: number
+  sku: string
+  name: string
+  unit: string
+  qty_on_hand: number
+  cost_price: number
+  sell_price: number
+  cost_value: number
+  retail_value: number
+}
+
+export interface InventoryValuationReport {
+  rows: InventoryValuationRow[]
+  totalCostValue: number
+  totalRetailValue: number
+}
+
+/** One row per sale — who rang it up and when (transaction listing report). */
+export interface TransactionRow {
+  sale_no: string
+  datetime: string
+  cashier: string
+  customer: string | null
+  payment_type: string
+  total: number
+  status: string
+}
+
+/** Audit-log categories surfaced as security reports. */
+export type AuditCategory = 'all' | 'logins' | 'overrides' | 'voids' | 'discounts'
+
+export interface AuditLogQuery {
+  fromUtc: string
+  toUtc: string
+  category: AuditCategory
+}
+
+export interface AuditRow {
+  datetime: string
+  user: string | null
+  action: string
+  detail: string
+}
+
+// ---------------------------------------------------------------------------
+// Customer ledger (AR)
+// ---------------------------------------------------------------------------
+
+export type LedgerMethod = 'cash' | 'check' | 'pdc' | 'card' | 'gcash' | 'paymaya'
+
+/** A customer with their current AR balance and aging buckets (all centavos). */
+export interface LedgerCustomer {
+  id: number
+  code: string
+  name: string
+  credit_limit: number
+  balance: number
+  current: number
+  d30: number
+  d60: number
+  d90: number
+}
+
+export interface LedgerEntryQuery {
+  customerId: number
+  fromUtc?: string | null
+  toUtc?: string | null
+  /** '' | 'charge' | 'payment' | 'adj' */
+  type?: string
+}
+
+export interface LedgerEntryRow {
+  id: number
+  datetime: string
+  type: string
+  ref_no: string
+  method: string
+  bank: string
+  check_no: string
+  check_date: string
+  check_due_date: string
+  debit: number
+  credit: number
+  note: string
+  user: string
+  /** Running balance up to and including this entry (centavos). */
+  balance: number
+}
+
+export interface LedgerPaymentInput {
+  customer_id: number
+  amount: number
+  method: LedgerMethod
+  /** Official receipt number → stored as ref_no. */
+  or_no: string
+  /** Drawee bank (check / PDC). */
+  bank: string
+  check_no: string
+  /** Date the check was issued (local 'YYYY-MM-DD'). */
+  check_date: string
+  /** PDC maturity / due date (local 'YYYY-MM-DD'). */
+  due_date: string
+  note: string
+}
+
+/** Generic Excel export payload — reused by every report. */
+export interface ExcelColumn {
+  header: string
+  key: string
+  width?: number
+  /** money → #,##0.00; int → #,##0; percent → 0.0%. Default: plain. */
+  format?: 'money' | 'int' | 'percent'
+}
+
+export interface ExcelExport {
+  fileName: string
+  sheetName: string
+  title?: string
+  columns: ExcelColumn[]
+  rows: Record<string, string | number>[]
 }

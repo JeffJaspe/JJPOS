@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import AppModal from '@/components/ui/AppModal.vue'
+import { useSettingsStore } from '@/stores/settings'
 import { centavosToInput, formatPeso, pesosToCentavos } from '@/utils/money'
 import type { CustomerRow, PaymentInput, PaymentMethod } from '../../../shared/types'
 
 const props = defineProps<{
   open: boolean
   total: number
+  /** When true, a customer must be selected even for non-charge payments. */
+  requireCustomer?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -14,12 +17,18 @@ const emit = defineEmits<{
   confirm: [payments: PaymentInput[], customerId: number | null]
 }>()
 
-const METHODS: { value: PaymentMethod; label: string }[] = [
-  { value: 'cash', label: 'Cash' },
-  { value: 'card', label: 'Card' },
-  { value: 'ewallet', label: 'E-Wallet' },
-  { value: 'charge', label: 'Charge' }
-]
+const settings = useSettingsStore()
+
+/** Offered tenders: cash & charge always; card/GCash/PayMaya per Settings → Payments. */
+const methods = computed<{ value: PaymentMethod; label: string }[]>(() => {
+  const a = settings.app
+  const list: { value: PaymentMethod; label: string }[] = [{ value: 'cash', label: 'Cash' }]
+  if ((a.card_enabled ?? '1') === '1') list.push({ value: 'card', label: 'Card' })
+  if ((a.gcash_enabled ?? '1') === '1') list.push({ value: 'gcash', label: 'GCash' })
+  if ((a.paymaya_enabled ?? '1') === '1') list.push({ value: 'paymaya', label: 'PayMaya' })
+  list.push({ value: 'charge', label: 'Charge' })
+  return list
+})
 
 interface PayRow {
   method: PaymentMethod
@@ -45,8 +54,9 @@ watch(
 const paid = computed(() => rows.value.reduce((n, r) => n + pesosToCentavos(r.amount), 0))
 const change = computed(() => paid.value - props.total)
 const hasCharge = computed(() => rows.value.some((r) => r.method === 'charge'))
+const needsCustomer = computed(() => hasCharge.value || !!props.requireCustomer)
 const canConfirm = computed(
-  () => paid.value >= props.total && (!hasCharge.value || customerId.value !== null) && !busy.value
+  () => paid.value >= props.total && (!needsCustomer.value || customerId.value !== null) && !busy.value
 )
 
 function addRow(): void {
@@ -69,7 +79,7 @@ function confirm(): void {
   const payments: PaymentInput[] = rows.value
     .map((r) => ({ method: r.method, amount: pesosToCentavos(r.amount) }))
     .filter((p) => p.amount > 0)
-  emit('confirm', payments, hasCharge.value ? customerId.value : null)
+  emit('confirm', payments, needsCustomer.value ? customerId.value : null)
 }
 
 defineExpose({ stopBusy: () => (busy.value = false) })
@@ -106,7 +116,7 @@ defineExpose({ stopBusy: () => (busy.value = false) })
       <div class="space-y-2">
         <div v-for="(row, i) in rows" :key="i" class="flex items-center gap-2">
           <select v-model="row.method" class="input w-32">
-            <option v-for="m in METHODS" :key="m.value" :value="m.value">{{ m.label }}</option>
+            <option v-for="m in methods" :key="m.value" :value="m.value">{{ m.label }}</option>
           </select>
           <input
             v-model="row.amount"
@@ -131,9 +141,11 @@ defineExpose({ stopBusy: () => (busy.value = false) })
         </button>
       </div>
 
-      <!-- Charge-to-account customer -->
-      <div v-if="hasCharge">
-        <label class="mb-1 block text-sm font-medium text-gray-700">Charge to customer *</label>
+      <!-- Customer (required for charge sales, or when the account requires one) -->
+      <div v-if="needsCustomer">
+        <label class="mb-1 block text-sm font-medium text-gray-700">
+          {{ hasCharge ? 'Charge to customer *' : 'Customer *' }}
+        </label>
         <select v-model="customerId" class="input">
           <option :value="null">— Select customer —</option>
           <option v-for="c in customers" :key="c.id" :value="c.id">

@@ -204,12 +204,16 @@ async function save(): Promise<void> {
         <input v-model.number="form.reorder_level" type="number" min="0" step="1" class="input" />
       </div>
 
-      <div>
-        <label class="mb-1 block text-sm font-medium text-gray-700">Tax type</label>
-        <select v-model="form.tax_type" class="input">
-          <option value="vat">VAT</option>
-          <option value="non_vat">Non-VAT</option>
-        </select>
+      <div class="flex items-end pb-2">
+        <label class="flex items-center gap-2 text-sm font-medium text-gray-700">
+          <input
+            type="checkbox"
+            class="h-4 w-4 rounded accent-accent"
+            :checked="form.tax_type === 'vat'"
+            @change="form.tax_type = ($event.target as HTMLInputElement).checked ? 'vat' : 'non_vat'"
+          />
+          VAT-inclusive item
+        </label>
       </div>
       <div class="flex items-end pb-2">
         <label class="flex items-center gap-2 text-sm font-medium text-gray-700">

@@ -1,8 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
   AdjustInput,
+  AuditLogQuery,
+  AuditRow,
   Branding,
   Category,
+  DailySalesReport,
+  ExcelExport,
+  InventoryValuationReport,
   CustomerInput,
   CustomerListQuery,
   CustomerRow,
@@ -12,6 +17,10 @@ import type {
   ItemInput,
   ItemListQuery,
   ItemRow,
+  LedgerCustomer,
+  LedgerEntryQuery,
+  LedgerEntryRow,
+  LedgerPaymentInput,
   LowStockRow,
   MovementQuery,
   MovementRow,
@@ -21,13 +30,22 @@ import type {
   PromoDetail,
   PromoInput,
   RecentSale,
+  ReportRange,
+  RoleInput,
+  RoleRow,
   SaleInput,
+  SalesByCategoryRow,
+  SalesByItemRow,
   SaleReceipt,
   SessionUser,
   StockInInput,
   StocktakeInput,
   StocktakeResult,
   Supplier,
+  TransactionRow,
+  UserCreateInput,
+  UserRow,
+  UserUpdateInput,
   VoidSaleInput,
   Voucher,
   VoucherCreateInput,
@@ -46,10 +64,19 @@ const api = {
     login: (username: string, password: string) =>
       invoke<SessionUser>('auth:login', { username, password }),
     logout: () => invoke<true>('auth:logout'),
-    getSession: () => invoke<SessionUser | null>('auth:getSession')
+    getSession: () => invoke<SessionUser | null>('auth:getSession'),
+    /** Inline supervisor override: verify creds + a permission for an action (e.g. void a line). */
+    verifySupervisor: (username: string, password: string, permission: string, action: string) =>
+      invoke<{ username: string }>('auth:verifySupervisor', {
+        username,
+        password,
+        permission,
+        action
+      })
   },
   branding: {
-    get: () => invoke<Branding>('branding:get')
+    get: () => invoke<Branding>('branding:get'),
+    set: (input: Branding) => invoke<true>('branding:set', input)
   },
   items: {
     list: (query: ItemListQuery = {}) => invoke<ItemRow[]>('items:list', query),
@@ -76,6 +103,8 @@ const api = {
       invoke<true>('suppliers:update', { id, name, contact, active })
   },
   print: {
+    listPrinters: () =>
+      invoke<{ name: string; displayName: string }[]>('print:listPrinters'),
     /** Base64 PDF of the document, paginated exactly as it will print. */
     previewPdf: (html: string) => invoke<string>('print:previewPdf', { html }),
     /** Returns false if the user cancelled the print dialog. */
@@ -111,7 +140,8 @@ const api = {
   },
   settings: {
     get: () => invoke<Record<string, string>>('settings:get'),
-    set: (key: string, value: string) => invoke<true>('settings:set', { key, value })
+    set: (key: string, value: string) => invoke<true>('settings:set', { key, value }),
+    setInvoiceNumber: (next: number) => invoke<true>('settings:setInvoiceNumber', { next })
   },
   inventory: {
     stockIn: (input: StockInInput) => invoke<true>('inventory:stockIn', input),
@@ -119,6 +149,34 @@ const api = {
     stocktake: (input: StocktakeInput) => invoke<StocktakeResult>('inventory:stocktake', input),
     movements: (query: MovementQuery = {}) => invoke<MovementRow[]>('inventory:movements', query),
     lowStock: () => invoke<LowStockRow[]>('inventory:lowStock')
+  },
+  reports: {
+    dailySales: (range: ReportRange) => invoke<DailySalesReport>('reports:dailySales', range),
+    salesByItem: (range: ReportRange) => invoke<SalesByItemRow[]>('reports:salesByItem', range),
+    salesByCategory: (range: ReportRange) =>
+      invoke<SalesByCategoryRow[]>('reports:salesByCategory', range),
+    transactions: (range: ReportRange) => invoke<TransactionRow[]>('reports:transactions', range),
+    auditLog: (query: AuditLogQuery) => invoke<AuditRow[]>('reports:auditLog', query),
+    inventoryValuation: () => invoke<InventoryValuationReport>('reports:inventoryValuation'),
+    exportExcel: (payload: ExcelExport) => invoke<string | null>('reports:exportExcel', payload)
+  },
+  ledger: {
+    summary: () => invoke<LedgerCustomer[]>('ledger:summary'),
+    entries: (query: LedgerEntryQuery) => invoke<LedgerEntryRow[]>('ledger:entries', query),
+    payment: (input: LedgerPaymentInput) => invoke<number>('ledger:payment', input)
+  },
+  users: {
+    list: () => invoke<UserRow[]>('users:list'),
+    create: (input: UserCreateInput) => invoke<number>('users:create', input),
+    update: (id: number, input: UserUpdateInput) => invoke<true>('users:update', { id, input }),
+    setPassword: (id: number, password: string) =>
+      invoke<true>('users:setPassword', { id, password })
+  },
+  roles: {
+    list: () => invoke<RoleRow[]>('roles:list'),
+    create: (input: RoleInput) => invoke<number>('roles:create', input),
+    update: (id: number, input: RoleInput) => invoke<true>('roles:update', { id, input }),
+    remove: (id: number) => invoke<true>('roles:delete', id)
   }
 }
 

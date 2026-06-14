@@ -3,16 +3,19 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import PaymentModal from '@/components/pos/PaymentModal.vue'
 import HeldSalesModal from '@/components/pos/HeldSalesModal.vue'
 import VoidSaleModal from '@/components/pos/VoidSaleModal.vue'
+import ItemSearchModal from '@/components/pos/ItemSearchModal.vue'
+import SeniorPwdModal from '@/components/pos/SeniorPwdModal.vue'
+import SupervisorOverrideModal from '@/components/pos/SupervisorOverrideModal.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
-import { useCartStore } from '@/stores/cart'
+import { useCartStore, type CartLine } from '@/stores/cart'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import { useToast } from '@/composables/useToast'
 import { usePermissions } from '@/composables/usePermissions'
 import { centavosToInput, formatPeso, pesosToCentavos } from '@/utils/money'
 import { buildReceiptHtml } from '@/utils/receipt'
-import type { PaymentInput, PosItem } from '../../shared/types'
+import type { PaymentInput, PosItem, SpecialDiscount } from '../../shared/types'
 
 const cart = useCartStore()
 const settings = useSettingsStore()
@@ -85,6 +88,11 @@ function clearSearch(): void {
 // -- Line editing --------------------------------------------------------------
 
 const canOverride = can('price_override')
+const canVoid = can('void')
+const requireCustomer = can('require_customer')
+
+// F1 quick item-search modal.
+const itemSearchOpen = ref(false)
 
 function setQty(key: number, value: number): void {
   const line = cart.lines.find((l) => l.key === key)
@@ -120,21 +128,112 @@ function applyPriceEdit(): void {
 
 // -- Discounts ------------------------------------------------------------------
 
-const discountInput = ref('')
-function applyDiscount(): void {
-  const raw = discountInput.value.trim()
-  if (!raw) {
+// Transaction (document) discount: a ₱/% mode + a numeric value.
+const txnMode = ref<'amount' | 'percent'>('amount')
+const txnInput = ref('')
+function applyTxnDiscount(): void {
+  const v = Number.parseFloat(txnInput.value) || 0
+  if (v <= 0) {
     cart.discountType = 'none'
     cart.discountValue = 0
     return
   }
-  if (raw.endsWith('%')) {
+  if (txnMode.value === 'percent') {
     cart.discountType = 'percent'
-    cart.discountValue = Math.trunc(Number.parseFloat(raw) || 0)
+    cart.discountValue = Math.trunc(Math.min(v, 100))
   } else {
     cart.discountType = 'amount'
-    cart.discountValue = pesosToCentavos(raw)
+    cart.discountValue = pesosToCentavos(txnInput.value)
   }
+}
+/** Reflect cart discount state into the local inputs (e.g. after recall). */
+function seedTxnInputs(): void {
+  if (cart.discountType === 'percent') {
+    txnMode.value = 'percent'
+    txnInput.value = String(cart.discountValue)
+  } else if (cart.discountType === 'amount') {
+    txnMode.value = 'amount'
+    txnInput.value = centavosToInput(cart.discountValue)
+  } else {
+    txnMode.value = 'amount'
+    txnInput.value = ''
+  }
+}
+function setTxnMode(event: Event): void {
+  txnMode.value = (event.target as HTMLSelectElement).value === 'percent' ? 'percent' : 'amount'
+  applyTxnDiscount()
+}
+
+// Manual discounts (line + transaction) are permission-gated; a cashier without
+// `discount` can unlock them for this sale via inline supervisor approval.
+const baseCanDiscount = can('discount')
+const discountAllowed = computed(() => baseCanDiscount || cart.discountApprover !== null)
+const discountOverrideOpen = ref(false)
+function onDiscountApproved(auth: { username: string; password: string }): void {
+  cart.setDiscountApprover(auth)
+  discountOverrideOpen.value = false
+  toast.success(`Discounts unlocked (approved by ${auth.username})`)
+  scanInput.value?.focus()
+}
+
+/** Per-line discount from the line's ₱/% mode + typed value, capped at the line. */
+function recomputeLineDiscount(line: CartLine): void {
+  const gross = line.price * line.qty
+  const v = Number.parseFloat(line.discountInput) || 0
+  if (v <= 0) {
+    line.lineDiscount = 0
+    return
+  }
+  if (line.discountMode === 'percent') {
+    line.lineDiscount = Math.min(Math.round((gross * Math.min(v, 100)) / 100), gross)
+  } else {
+    line.lineDiscount = Math.min(pesosToCentavos(line.discountInput), gross)
+  }
+}
+function setLineMode(line: CartLine, event: Event): void {
+  line.discountMode = (event.target as HTMLSelectElement).value === 'percent' ? 'percent' : 'amount'
+  recomputeLineDiscount(line)
+}
+
+// -- Senior / PWD discount ------------------------------------------------------
+
+const seniorPwdOpen = ref(false)
+function applySpecial(value: SpecialDiscount): void {
+  cart.setSpecialDiscount(value)
+  txnInput.value = ''
+  txnMode.value = 'amount'
+  seniorPwdOpen.value = false
+  toast.success(`${value.type === 'senior' ? 'Senior' : 'PWD'} discount applied`)
+  scanInput.value?.focus()
+}
+function removeSpecial(): void {
+  cart.clearSpecialDiscount()
+  seniorPwdOpen.value = false
+  scanInput.value?.focus()
+}
+
+// -- Void a cart line (permission-gated, with supervisor override) --------------
+
+const overrideOpen = ref(false)
+const pendingVoidKey = ref<number | null>(null)
+
+function requestRemoveLine(key: number): void {
+  if (canVoid) {
+    cart.removeLine(key)
+    return
+  }
+  pendingVoidKey.value = key
+  overrideOpen.value = true
+}
+
+function onVoidApproved(auth: { username: string; password: string }): void {
+  if (pendingVoidKey.value !== null) {
+    cart.removeLine(pendingVoidKey.value)
+    toast.success(`Item voided (approved by ${auth.username})`)
+  }
+  pendingVoidKey.value = null
+  overrideOpen.value = false
+  scanInput.value?.focus()
 }
 
 // -- Payment / completion ---------------------------------------------------------
@@ -156,6 +255,8 @@ async function onConfirmPayment(payments: PaymentInput[], customerId: number | n
     const receipt = await cart.complete(payments, customerId)
     paymentOpen.value = false
     changeOverlay.value = { change: receipt.change, total: receipt.total }
+    txnInput.value = ''
+    txnMode.value = 'amount'
     printReceipt(false)
   } catch (err) {
     paymentModal.value?.stopBusy()
@@ -194,6 +295,8 @@ async function confirmHold(): Promise<void> {
   if (cart.isEmpty) return
   await window.api.sales.hold(holdLabel.value, cart.snapshot())
   cart.clear()
+  txnInput.value = ''
+  txnMode.value = 'amount'
   holdOpen.value = false
   holdLabel.value = ''
   toast.success('Sale held')
@@ -206,6 +309,7 @@ function onRecalled(payload: string): void {
     return
   }
   cart.restore(payload)
+  seedTxnInputs()
   heldOpen.value = false
   scanInput.value?.focus()
 }
@@ -228,7 +332,10 @@ function onFullscreenChange(): void {
 }
 
 function onKeydown(event: KeyboardEvent): void {
-  if (event.key === 'F9') {
+  if (event.key === 'F1') {
+    event.preventDefault()
+    itemSearchOpen.value = true
+  } else if (event.key === 'F9') {
     event.preventDefault()
     openPayment()
   } else if (event.key === 'F10') {
@@ -340,7 +447,7 @@ const changeClass = computed(() => {
                 <th class="px-3 py-2.5">Item</th>
                 <th class="w-24 px-3 py-2.5 text-center">Qty</th>
                 <th class="w-28 px-3 py-2.5 text-right">Price</th>
-                <th class="w-28 px-3 py-2.5 text-right">Less</th>
+                <th class="w-36 px-3 py-2.5 text-right">Less</th>
                 <th class="w-28 px-3 py-2.5 text-right">Total</th>
                 <th class="w-10 px-3 py-2.5"></th>
               </tr>
@@ -391,16 +498,30 @@ const changeClass = computed(() => {
                     {{ formatPeso(line.price) }}
                   </button>
                 </td>
-                <td class="px-3 py-2 text-right">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    :value="line.lineDiscount ? centavosToInput(line.lineDiscount) : ''"
-                    placeholder="0.00"
-                    class="input w-24 px-2 py-1 text-right"
-                    @change="line.lineDiscount = pesosToCentavos(($event.target as HTMLInputElement).value)"
-                  />
+                <td class="px-3 py-2">
+                  <div class="flex items-center justify-end gap-1">
+                    <select
+                      :value="line.discountMode"
+                      :disabled="!discountAllowed"
+                      class="input w-12 px-1 py-1 text-xs disabled:bg-gray-100"
+                      @change="setLineMode(line, $event)"
+                    >
+                      <option value="amount">₱</option>
+                      <option value="percent">%</option>
+                    </select>
+                    <input
+                      v-model="line.discountInput"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0"
+                      :disabled="!discountAllowed"
+                      :title="discountAllowed ? undefined : 'Discounts need permission — unlock below'"
+                      class="input w-16 px-2 py-1 text-right disabled:cursor-not-allowed disabled:bg-gray-100"
+                      @change="recomputeLineDiscount(line)"
+                      @keydown.enter.prevent="recomputeLineDiscount(line)"
+                    />
+                  </div>
                 </td>
                 <td class="px-3 py-2 text-right font-semibold tabular-nums">
                   {{ formatPeso(line.price * line.qty - line.lineDiscount) }}
@@ -408,8 +529,9 @@ const changeClass = computed(() => {
                 <td class="px-3 py-2 text-center">
                   <button
                     class="text-gray-300 transition-colors duration-100 hover:text-red-600"
-                    :aria-label="`Remove ${line.name}`"
-                    @click="cart.removeLine(line.key)"
+                    :aria-label="`Void ${line.name}`"
+                    :title="canVoid ? 'Void line' : 'Void line (needs supervisor approval)'"
+                    @click="requestRemoveLine(line.key)"
                   >
                     ✕
                   </button>
@@ -442,18 +564,56 @@ const changeClass = computed(() => {
             <span>Line discounts</span>
             <span class="tabular-nums">-{{ formatPeso(cart.lineDiscountTotal) }}</span>
           </div>
-          <div class="flex items-center justify-between gap-2 text-gray-600">
+          <div v-if="!cart.special" class="flex items-center justify-between gap-2 text-gray-600">
             <span>Discount</span>
-            <input
-              v-model="discountInput"
-              type="text"
-              placeholder="e.g. 10% or 50"
-              class="input w-28 px-2 py-1 text-right text-xs"
-              @change="applyDiscount"
-              @keydown.enter.prevent="applyDiscount"
-            />
-            <span class="w-20 text-right tabular-nums">-{{ formatPeso(cart.txnDiscount) }}</span>
+            <button
+              v-if="!discountAllowed"
+              class="ml-auto rounded border border-amber-300 px-2 py-1 text-xs font-medium text-amber-700 transition-colors duration-100 hover:bg-amber-50"
+              @click="discountOverrideOpen = true"
+            >
+              🔒 Unlock (supervisor)
+            </button>
+            <template v-else>
+              <select
+                :value="txnMode"
+                class="input w-14 px-1 py-1 text-right text-xs"
+                @change="setTxnMode"
+              >
+                <option value="amount">₱</option>
+                <option value="percent">%</option>
+              </select>
+              <input
+                v-model="txnInput"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0"
+                class="input w-20 px-2 py-1 text-right text-xs"
+                @change="applyTxnDiscount"
+                @keydown.enter.prevent="applyTxnDiscount"
+              />
+              <span class="w-20 text-right tabular-nums">-{{ formatPeso(cart.txnDiscount) }}</span>
+            </template>
           </div>
+          <p v-if="!cart.special && cart.discountApprover" class="text-right text-xs text-emerald-600">
+            Discounts approved by {{ cart.discountApprover?.username }}
+          </p>
+          <template v-else>
+            <div class="flex items-center justify-between gap-2 text-emerald-700">
+              <span class="font-medium">
+                {{ cart.special?.type === 'senior' ? 'Senior' : 'PWD' }}
+                <span class="font-mono text-xs text-emerald-600">{{ cart.special?.id }}</span>
+              </span>
+              <span class="ml-auto tabular-nums">-{{ formatPeso(cart.specialDiscount) }}</span>
+              <button
+                class="text-gray-300 transition-colors duration-100 hover:text-red-600"
+                aria-label="Remove senior/PWD discount"
+                @click="removeSpecial"
+              >
+                ✕
+              </button>
+            </div>
+          </template>
           <div v-if="cart.vouchers.length" class="space-y-1 border-t border-gray-100 pt-1.5">
             <div
               v-for="v in cart.vouchers"
@@ -480,6 +640,15 @@ const changeClass = computed(() => {
           Pay (F9)
         </button>
         <div class="grid grid-cols-2 gap-2">
+          <button class="btn-secondary" @click="itemSearchOpen = true">Find Item (F1)</button>
+          <button
+            class="btn-secondary"
+            :class="cart.special ? 'border-emerald-400 text-emerald-700' : ''"
+            :disabled="cart.isEmpty"
+            @click="seniorPwdOpen = true"
+          >
+            {{ cart.special ? 'Senior/PWD ✓' : 'Senior / PWD' }}
+          </button>
           <button class="btn-secondary" :disabled="cart.isEmpty" @click="holdOpen = true">
             Hold (F10)
           </button>
@@ -536,10 +705,42 @@ const changeClass = computed(() => {
       ref="paymentModal"
       :open="paymentOpen"
       :total="cart.total"
+      :require-customer="requireCustomer"
       @close="paymentOpen = false"
       @confirm="onConfirmPayment"
     />
     <HeldSalesModal :open="heldOpen" @close="heldOpen = false" @recalled="onRecalled" />
     <VoidSaleModal :open="voidOpen" @close="voidOpen = false" @voided="() => {}" />
+
+    <ItemSearchModal
+      :open="itemSearchOpen"
+      @close="itemSearchOpen = false"
+      @select="pickResult"
+    />
+    <SeniorPwdModal
+      :open="seniorPwdOpen"
+      :current="cart.special"
+      @close="seniorPwdOpen = false"
+      @apply="applySpecial"
+      @remove="removeSpecial"
+    />
+    <SupervisorOverrideModal
+      :open="overrideOpen"
+      title="Void Item — Approval Needed"
+      message="You don't have permission to void an item. A supervisor must approve."
+      permission="approve_voids"
+      action="void cart line"
+      @close="overrideOpen = false"
+      @approved="onVoidApproved"
+    />
+    <SupervisorOverrideModal
+      :open="discountOverrideOpen"
+      title="Discount — Approval Needed"
+      message="You don't have permission to apply discounts. A supervisor must approve."
+      permission="discount"
+      action="apply discount"
+      @close="discountOverrideOpen = false"
+      @approved="onDiscountApproved"
+    />
   </div>
 </template>

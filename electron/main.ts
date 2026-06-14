@@ -2,6 +2,7 @@ import { app, BrowserWindow, Menu, shell } from 'electron'
 import { join } from 'node:path'
 import { initDatabase } from './db'
 import { registerIpcHandlers } from './ipc'
+import { applyStoredWindowIcon } from './ipc/branding'
 
 // Dev/testing affordance: JJPOS_DEBUG_PORT=9222 npm run dev exposes the
 // Chrome DevTools Protocol so tooling can drive the renderer. Never set in production.
@@ -30,6 +31,9 @@ function createWindow(): void {
   })
 
   win.on('ready-to-show', () => win.show())
+
+  // Apply a custom favicon (if any) to the taskbar/title icon.
+  applyStoredWindowIcon(win)
 
   // Any external link opens in the OS browser, never inside the app.
   win.webContents.setWindowOpenHandler(({ url }) => {

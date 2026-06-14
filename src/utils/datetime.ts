@@ -36,3 +36,26 @@ export function utcToLocalInput(utc: string | null): string {
   const pad = (n: number): string => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0')
+}
+
+/** Local 'YYYY-MM-DD' for an <input type="date"> default (today). */
+export function todayLocal(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+}
+
+/**
+ * Turn an inclusive local day range ('YYYY-MM-DD' .. 'YYYY-MM-DD') into the UTC
+ * bounds reports query on: fromUtc = start of `from` day, toUtc = start of the
+ * day after `to` (exclusive upper bound). Mirrors the UTC storage convention.
+ */
+export function dayRangeToUtc(from: string, to: string): { fromUtc: string; toUtc: string } {
+  const start = new Date(`${from}T00:00:00`)
+  const endExclusive = new Date(`${to}T00:00:00`)
+  endExclusive.setDate(endExclusive.getDate() + 1)
+  const fmt = (d: Date): string => d.toISOString().slice(0, 19).replace('T', ' ')
+  return { fromUtc: fmt(start), toUtc: fmt(endExclusive) }
+}

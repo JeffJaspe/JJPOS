@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
-import AppIcon from '@/components/ui/AppIcon.vue'
+import BrandLogo from '@/components/ui/BrandLogo.vue'
 
 const auth = useAuthStore()
 const settings = useSettingsStore()
@@ -33,11 +33,8 @@ async function submit(): Promise<void> {
 <template>
   <div class="flex h-screen items-center justify-center bg-gray-100">
     <div class="w-full max-w-sm rounded-xl border border-gray-200 bg-white p-8 shadow-sm">
-      <div class="mb-6 flex flex-col items-center gap-2">
-        <AppIcon
-          :name="settings.branding.logo_value || 'storefront'"
-          class="h-12 w-12 text-accent"
-        />
+      <div class="mb-6 flex flex-col items-center gap-3">
+        <BrandLogo size-class="h-20 w-20" />
         <h1 class="text-xl font-semibold text-gray-900">{{ settings.branding.app_name }}</h1>
         <p class="text-sm text-gray-500">Sign in to continue</p>
       </div>

@@ -27,3 +27,10 @@ export function requirePermission(perm: PermKey): SessionUser {
   }
   return user
 }
+
+/** The role builder is Super-admin-only (the locked, built-in role). */
+export function requireSuperAdmin(): SessionUser {
+  const user = requireAuth()
+  if (!user.isSuperAdmin) throw new Error('Only the Superadmin can manage roles')
+  return user
+}
