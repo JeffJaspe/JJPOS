@@ -3,7 +3,12 @@ import { handle } from './handle'
 import { requireAuth, requirePermission } from './session'
 
 /** Sequence counters & internals that must never be edited through settings:set. */
-const PROTECTED_KEYS = new Set(['sale_sequence', 'voucher_sequence', 'barcode_sequence'])
+const PROTECTED_KEYS = new Set([
+  'sale_sequence',
+  'sale_seq_year',
+  'voucher_sequence',
+  'barcode_sequence'
+])
 
 export function registerSettingsHandlers(): void {
   handle<void, Record<string, string>>('settings:get', () => {

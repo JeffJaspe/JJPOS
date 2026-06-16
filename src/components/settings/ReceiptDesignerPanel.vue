@@ -57,7 +57,7 @@ onMounted(async () => {
 // -- Sample sale for the preview ------------------------------------------------
 const SAMPLE: SaleReceipt = {
   id: 0,
-  sale_no: 'SI-000123',
+  sale_no: 'SI2026-000123',
   datetime: '2026-06-13 10:30:00',
   subtotal: 25000,
   discount: 2500,

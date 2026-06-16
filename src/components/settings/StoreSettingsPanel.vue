@@ -5,6 +5,7 @@ import { useSettingsStore } from '@/stores/settings'
 
 const toast = useToast()
 const settings = useSettingsStore()
+const currentYear = new Date().getFullYear()
 
 interface FormState {
   store_name: string
@@ -26,7 +27,7 @@ const form = reactive<FormState>({
   receipt_footer: '',
   vat_rate: '12',
   vat_mode: 'per_item',
-  sale_prefix: 'SI-',
+  sale_prefix: 'SI',
   nextNumber: '1',
   receipt_printer: '',
   receipt_auto_print: true
@@ -50,7 +51,7 @@ onMounted(async () => {
     receipt_footer: a.receipt_footer ?? '',
     vat_rate: a.vat_rate ?? '12',
     vat_mode: a.vat_mode ?? 'per_item',
-    sale_prefix: a.sale_prefix ?? 'SI-',
+    sale_prefix: a.sale_prefix ?? 'SI',
     nextNumber: String(currentNext()),
     receipt_printer: a.receipt_printer ?? '',
     receipt_auto_print: (a.receipt_auto_print ?? '1') === '1'
@@ -86,7 +87,7 @@ async function save(): Promise<void> {
       receipt_footer: form.receipt_footer.trim(),
       vat_rate: String(vat),
       vat_mode: form.vat_mode === 'overall' ? 'overall' : 'per_item',
-      sale_prefix: form.sale_prefix.trim() || 'SI-',
+      sale_prefix: form.sale_prefix.trim() || 'SI',
       receipt_printer: form.receipt_printer,
       receipt_auto_print: form.receipt_auto_print ? '1' : '0'
     }
@@ -182,15 +183,15 @@ async function save(): Promise<void> {
       <div class="grid grid-cols-2 gap-4">
         <div>
           <label class="mb-1 block text-sm font-medium text-gray-700">Invoice prefix</label>
-          <input v-model="form.sale_prefix" type="text" class="input" placeholder="SI-" />
+          <input v-model="form.sale_prefix" type="text" class="input" placeholder="SI" />
         </div>
         <div>
           <label class="mb-1 block text-sm font-medium text-gray-700">Next SI number</label>
           <input v-model="form.nextNumber" type="number" min="1" step="1" class="input" />
           <p class="mt-1 text-xs text-gray-400">
             Next receipt:
-            <span class="font-mono">{{ form.sale_prefix || 'SI-' }}{{ String(Math.max(Number(form.nextNumber) || 1, 1)).padStart(6, '0') }}</span>
-            · forward-only
+            <span class="font-mono">{{ form.sale_prefix || 'SI' }}{{ currentYear }}-{{ String(Math.max(Number(form.nextNumber) || 1, 1)).padStart(6, '0') }}</span>
+            · resets each year · forward-only
           </p>
         </div>
       </div>

@@ -69,6 +69,8 @@ A standalone desktop Point-of-Sale system built with Electron, featuring invento
 - **Vouchers**: scan a voucher barcode at POS → validated (active, not expired, not yet redeemed) and its value deducted from the total; the voucher is marked redeemed atomically with the sale and the redemption is recorded on the sale. Issuance is managed in the Items → Vouchers tab (see 3.1), gated by `manage_vouchers`
 - Payment: cash (with change computation), card, GCash/e-wallet, split payment, **charge to account (credit sale → ledger)**
 - Hold/recall transactions
+- **Clear cart**: a manual button to discard the current cart in one action (with confirm)
+- **Crash / power / network recovery**: the active cart is autosaved locally and offered back to the same cashier after an unexpected shutdown or lost connection — see §10.11
 - Receipt printing (thermal 58/80mm) + reprint
 - **Void with supervisor override**: if the cashier lacks the void permission, a supervisor/admin approves inline by entering their credentials (PIN-style prompt) without logging the cashier out; the audit log records who approved and for whom. Returns restock inventory
 - Offline by design — no internet dependency
@@ -229,11 +231,125 @@ pos-app/
 - Role builder screen (custom roles, menu visibility, permissions)
 - Backup/restore, audit log, NSIS installer via electron-builder, auto-update
 
+**Phase 7 — Multi-Station / Hub-and-Spoke Networking (optional, see §10)**
+- Station mode (Standalone default / Hub / Client) configurable in Settings, stored per-machine
+- Hub serves existing IPC handlers over the LAN; clients forward calls to the hub
+- Per-station token auth; shared single SI counter enforced on the hub
+- Hub spec-readiness check; Hub "Connections" tab to monitor connected stations
+
 ---
 
 ## 9. Key Decisions to Make Early
 
-1. **Single terminal or multi-terminal?** SQLite is perfect for one machine; if multiple POS terminals must share data live, plan a small local server (e.g., Node/Postgres on LAN) instead.
+1. **Single terminal or multi-terminal?** SQLite is perfect for one machine. For multiple POS terminals sharing data live, this app uses the **hub-and-spoke** design in §10 (one station hosts the SQLite DB, others connect over the LAN) — a single shared database keeps the SI invoice series correct. For 9+ busy lanes, consider migrating to PostgreSQL on the LAN instead.
 2. **Receipt printer model** — thermal ESC/POS vs. regular printer changes the printing code.
 3. **VAT/BIR compliance** (if Philippines retail) — affects receipt format, Z-reading, and discount handling for senior/PWD.
 4. **Cost method** — capture cost at time of sale (simplest, recommended) vs. moving average.
+
+---
+
+## 10. Multi-Station (Hub-and-Spoke Networking) — Optional
+
+Lets several POS stations on the same indoor LAN share **one live database** so stock, customers, ledger, and especially the **Sales Invoice (SI) number** stay consistent across terminals running simultaneously. Single-terminal installs are unaffected — **Standalone is the default** and behaves exactly as today.
+
+### 10.1 Why hub-and-spoke (not independent DBs)
+
+Stations operate at the same time and must share **one controlled SI series** (no duplicate or skipped numbers). That requires a single source of truth, so one machine (the **Hub**) owns the SQLite database and every other station (a **Client**) asks the Hub for everything. Because all `sales:complete` transactions execute on the Hub, SQLite serializes them and `nextSaleNo()` (year-reset series `SI{YYYY}-{NNNNNN}`) hands out unique, gapless numbers automatically — no distributed locking needed.
+
+**Trade-off (accepted):** Clients require the Hub to be online to sell. There is no offline-then-sync mode — a shared live counter makes that impractical. The Hub should be a PC that stays on during business hours (UPS recommended).
+
+### 10.2 The three station modes
+
+| Mode | DB | Role |
+|---|---|---|
+| **Standalone** (default) | Local `pos.db` | Single terminal, no network — today's behavior |
+| **Hub (server)** | Local `pos.db` | Owns the DB; serves Clients over the LAN; is also a working cashier station |
+| **Client** | None | Forwards every request to the Hub over the LAN |
+
+- **Mode is stored per-machine**, not in the shared DB (a Client has no DB). A small local config file (e.g., `station.json` in `userData`) holds `{ mode, hubHost, hubPort, accessKey, stationName }`, read at startup **before** DB init (Standalone/Hub init the DB; Client skips it).
+- Changing mode is done in **Settings → Stations/Network** and takes effect after a confirm + app restart.
+
+### 10.3 Transport architecture (reuses existing handlers)
+
+All data already flows through one choke point: `handle(channel, fn)` (`electron/ipc/handle.ts`) returning an `IpcResult` envelope. Networking is a **transport swap**, not a logic rewrite:
+
+- Refactor handler registration into a shared **dispatch map** (`channel → fn`) used by both `ipcMain` and the Hub server.
+- **Hub:** main process starts a LAN HTTP/WebSocket server exposing `POST /rpc` with `{ channel, payload }`, dispatching to the same handlers. Binds to the LAN interface; the Hub's own renderer keeps using local IPC.
+- **Client:** main process does **not** open a DB. Each `ipcMain` handler becomes a thin forwarder that POSTs `{ channel, payload, token }` to `http://<hubHost>:<hubPort>/rpc` and returns the response. The renderer and `window.api.*` are unchanged.
+
+### 10.4 Authentication (the main rework)
+
+Today the session is a single global in the Hub's main process (`electron/ipc/session.ts`). With multiple Clients it must become **per-connection**:
+
+- `auth:login` on a Client authenticates against the Hub and returns a **station token**; the Client stores it and includes it on every RPC.
+- Hub keeps a `token → SessionUser` map; `requireAuth`/`requirePermission` resolve the user from the request token instead of one global.
+- A shared **access key** (set on the Hub, entered on each Client) gates which machines may connect at all — so only your stations can reach the Hub.
+- All existing server-side permission checks stay exactly as they are.
+
+### 10.5 Settings → Stations/Network tab
+
+User-friendly setup:
+
+- **Mode picker:** Standalone / Hub / Client (with a short description of each).
+- **Hub mode:** shows this PC's **LAN IP address(es)** and port to type into Clients; lets you set the access key; runs the **spec-readiness check** (§10.6); opens the **Connections** tab (§10.7).
+- **Client mode:** fields for Hub IP + port + access key, a **"Test connection"** button (reports reachable / unreachable / wrong key / version mismatch), and an editable **station name** (e.g., "Lane 2").
+- Clear status banner + confirm-and-restart when switching modes.
+
+### 10.6 Hub spec-readiness check
+
+When Hub mode is selected, read this PC's hardware (Electron main: `os.cpus()`, `os.totalmem()`, `os.networkInterfaces()`; disk type via a Windows PowerShell `Get-PhysicalDisk` query) and show a ✅/⚠️ checklist against recommended specs so an underpowered machine isn't chosen by accident:
+
+| Spec | Minimum | Recommended | Why |
+|---|---|---|---|
+| CPU | Dual-core | Quad-core | Serves all stations' requests |
+| RAM | 4 GB | 8 GB | Headroom for reports |
+| Disk | — | **SSD** | Biggest factor for SQLite write latency |
+| Network | 100 Mbps | **Gigabit, wired** | Stable Hub link |
+| Power | — | **UPS** | Power loss = all lanes down + DB risk |
+
+### 10.7 Hub "Connections" tab (Hub mode only)
+
+A live monitoring view, visible only when this machine is the Hub, listing every connected Client station:
+
+- **Per station:** station name, IP address, currently logged-in cashier, status (online / idle), last-activity time, and app version (flag version mismatches).
+- **Live updates** as stations connect/disconnect or log in/out.
+- **Actions:** revoke/disconnect a station (invalidate its token), and a count of active connections.
+- Backed by the Hub's connection registry (token map + per-connection metadata); audit-logged when a station is revoked.
+
+### 10.8 Capacity guidance (SQLite Hub, indoor LAN)
+
+| Stations | Verdict |
+|---|---|
+| 2–5 | ✅ Sweet spot — SQLite Hub ideal |
+| 6–8 | ✅ Fine; watch heavy reports during rush |
+| 9+ / very busy | ⚠️ Consider PostgreSQL on the LAN |
+
+Use **wired Gigabit Ethernet for the Hub**; Clients may use Wi-Fi but wired is steadier. LAN latency is sub-millisecond, so RPC overhead is negligible.
+
+### 10.9 Phased delivery
+
+1. **Station config + Settings UI** — mode picker, per-machine config, Client connection fields + "Test connection", Hub LAN-IP display, spec-readiness check. (Standalone stays default; no behavior change for single terminals.)
+2. **Hub server** — shared dispatch map + LAN `/rpc` endpoint serving existing handlers; access-key gate.
+3. **Client transport + token auth** — Client forwarding layer; per-station tokens; Hub session map; `requireAuth` resolves per request.
+4. **Connections tab + polish** — live connections view, revoke/disconnect, connection-status indicator across the app, clear "Hub offline" errors, reconnection handling.
+
+### 10.10 Risks & constraints
+
+- **Hub is a single point of failure** — if it's off/unreachable, Clients can't sell. Mitigate with an always-on Hub + UPS; document this for the store.
+- **Backups matter more** — all data lives on the Hub; keep the scheduled `pos.db` backup (to folder/USB) enabled there.
+- **Security** — LAN-only binding + shared access key + per-station tokens; plaintext HTTP is acceptable on a closed store LAN, with TLS as a later option.
+- **Concurrency** — `better-sqlite3` is synchronous; requests serialize on the Hub. Fine at 2–8 stations; very heavy concurrent reporting could briefly block sales (revisit with PostgreSQL only if needed).
+
+### 10.11 Local cart resilience (crash / power-off / network recovery)
+
+Applies to **all modes** (Standalone, Hub, Client). The cart is renderer state; this protects an in-progress sale from a sudden power-off, app crash, or — on a Client — a dropped connection to the Hub, so the cashier never loses a half-rung transaction.
+
+**This is a deliberate exception to "clear cache/memory on reboot."** Everything else still clears; the *active cart draft* persists locally until it is genuinely finished.
+
+- **Autosave:** on every cart change, write a draft to a small local file in `userData` (e.g., `cart-draft.json`), tagged with `{ stationName, userId, savedAt }`. (Local file, not the shared DB — a Client has no DB, and a draft must survive even when the Hub/network is down.)
+- **Recovery:** at app start, if a draft exists (it was never cleared → ungraceful exit), offer it back to the **same cashier** on their next login: "Unfinished sale found — Recover / Discard." Same-user only, to preserve account isolation; a different cashier logging in does not see it.
+- **Network loss on a Client:** the cart is local, so it is untouched while the Hub is unreachable; a connection-status banner shows offline, and on reconnect the cashier completes the sale (the Hub assigns the SI number atomically). The autosave adds power-off protection on top.
+- **The draft is cleared when** the sale completes, the cashier presses **Clear cart**, or on logout/account switch (existing behavior). Completing a sale deletes the draft as part of the same flow.
+- **Manual Clear cart:** a POS button (confirm dialog) that empties the current cart — lines, vouchers, discounts — and removes the draft.
+
+**Reconciliation with earlier rules:** logout/account switch still fully resets the cart (no cross-account leak); a graceful clear removes the draft; only an *unexpected* termination leaves a draft, and only the owning cashier can recover it.

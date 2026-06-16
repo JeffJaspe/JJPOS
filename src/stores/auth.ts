@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import type { MenuKey, PermKey, SessionUser } from '../../shared/types'
+import { useCartStore } from './cart'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -25,11 +26,17 @@ export const useAuthStore = defineStore('auth', {
 
     async login(username: string, password: string): Promise<void> {
       this.session = await window.api.auth.login(username, password)
+      // Belt-and-suspenders: the new account always starts on a clean POS,
+      // even if the previous session ended without a logout.
+      useCartStore().$reset()
     },
 
     async logout(): Promise<void> {
       await window.api.auth.logout()
       this.session = null
+      // Session-scoped state must not leak to the next account: clear the cart,
+      // vouchers, discounts and the cached last-sale receipt.
+      useCartStore().$reset()
     }
   }
 })

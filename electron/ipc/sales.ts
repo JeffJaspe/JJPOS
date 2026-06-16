@@ -38,10 +38,36 @@ function getSetting(db: Database.Database, key: string): string | undefined {
   return row?.value
 }
 
+function setSetting(db: Database.Database, key: string, value: string): void {
+  const info = db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(value, key)
+  if (info.changes === 0) {
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(key, value)
+  }
+}
+
 function bumpSequence(db: Database.Database, key: string): number {
   const next = Number(getSetting(db, key) ?? 0) + 1
-  db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(String(next), key)
+  setSetting(db, key, String(next))
   return next
+}
+
+/**
+ * Build the next Sales Invoice number: `{prefix}{YYYY}-{NNNNNN}`, e.g. SI2026-000001.
+ * The number resets to 1 at the start of each calendar year. We track the year the
+ * counter belongs to in `sale_seq_year`; when the local year rolls over, the counter
+ * is reset before being bumped. Year is local time to match the receipt's printed date.
+ * Caller must already be inside the sale transaction.
+ */
+function nextSaleNo(db: Database.Database): string {
+  const prefix = getSetting(db, 'sale_prefix') || 'SI'
+  const year = new Date().getFullYear()
+  const storedYear = Number(getSetting(db, 'sale_seq_year') ?? 0)
+  if (storedYear !== year) {
+    setSetting(db, 'sale_seq_year', String(year))
+    setSetting(db, 'sale_sequence', '0')
+  }
+  const seq = bumpSequence(db, 'sale_sequence')
+  return `${prefix}${year}-${String(seq).padStart(6, '0')}`
 }
 
 function audit(db: Database.Database, userId: number, action: string, detail: string): void {
@@ -361,8 +387,7 @@ export function registerSalesHandlers(): void {
       const tax = Math.round((taxedBase * vatRate) / (100 + vatRate))
 
       const paymentType = input.payments.length > 1 ? 'split' : input.payments[0].method
-      const prefix = getSetting(db, 'sale_prefix') || 'SI-'
-      const saleNo = prefix + String(bumpSequence(db, 'sale_sequence')).padStart(6, '0')
+      const saleNo = nextSaleNo(db)
 
       const saleInfo = db
         .prepare(
