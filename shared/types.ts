@@ -48,9 +48,11 @@ export const PERM_KEYS = [
   'approve_voids',
   'export_reports',
   'view_audit',
+  'view_price_log',
   'manage_branding',
   'manage_users',
-  'manage_settings'
+  'manage_settings',
+  'manage_backup'
 ] as const
 export type PermKey = (typeof PERM_KEYS)[number]
 
@@ -79,9 +81,21 @@ export const PERM_LABELS: Record<PermKey, string> = {
   approve_voids: 'Approve voids (supervisor)',
   export_reports: 'View & export reports',
   view_audit: 'View audit & security logs',
+  view_price_log: 'View item price-change log',
   manage_branding: 'Manage branding',
   manage_users: 'Manage user accounts',
-  manage_settings: 'Manage store settings'
+  manage_settings: 'Manage store settings',
+  manage_backup: 'Back up & restore the database'
+}
+
+/** A backup file on disk, surfaced in Settings → Backup. */
+export interface BackupFile {
+  name: string
+  path: string
+  /** Size in bytes. */
+  size: number
+  /** ISO 8601 UTC of the file's modified time. */
+  createdAt: string
 }
 
 // ---------------------------------------------------------------------------
@@ -605,7 +619,7 @@ export interface TransactionRow {
 }
 
 /** Audit-log categories surfaced as security reports. */
-export type AuditCategory = 'all' | 'logins' | 'overrides' | 'voids' | 'discounts'
+export type AuditCategory = 'all' | 'logins' | 'overrides' | 'voids' | 'discounts' | 'price_changes'
 
 export interface AuditLogQuery {
   fromUtc: string

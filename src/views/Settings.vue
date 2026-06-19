@@ -6,6 +6,7 @@ import BrandingPanel from '@/components/settings/BrandingPanel.vue'
 import StoreSettingsPanel from '@/components/settings/StoreSettingsPanel.vue'
 import ReceiptDesignerPanel from '@/components/settings/ReceiptDesignerPanel.vue'
 import PaymentsPanel from '@/components/settings/PaymentsPanel.vue'
+import BackupPanel from '@/components/settings/BackupPanel.vue'
 import PlaceholderView from '@/components/ui/PlaceholderView.vue'
 import { usePermissions } from '@/composables/usePermissions'
 import { useAuthStore } from '@/stores/auth'
@@ -13,7 +14,7 @@ import { useAuthStore } from '@/stores/auth'
 const { can } = usePermissions()
 const auth = useAuthStore()
 
-type Tab = 'Users' | 'Roles' | 'Branding' | 'Store' | 'Payments' | 'Receipt'
+type Tab = 'Users' | 'Roles' | 'Branding' | 'Store' | 'Payments' | 'Receipt' | 'Backup'
 const TABS: Tab[] = []
 if (can('manage_users')) TABS.push('Users')
 if (auth.session?.isSuperAdmin) TABS.push('Roles')
@@ -21,6 +22,7 @@ if (can('manage_branding')) TABS.push('Branding')
 if (can('manage_settings')) TABS.push('Store')
 if (can('manage_settings')) TABS.push('Payments')
 if (can('manage_settings')) TABS.push('Receipt')
+if (can('manage_backup')) TABS.push('Backup')
 
 const tab = ref<Tab | null>(TABS[0] ?? null)
 </script>
@@ -50,12 +52,13 @@ const tab = ref<Tab | null>(TABS[0] ?? null)
       <StoreSettingsPanel v-else-if="tab === 'Store'" />
       <PaymentsPanel v-else-if="tab === 'Payments'" />
       <ReceiptDesignerPanel v-else-if="tab === 'Receipt'" />
+      <BackupPanel v-else-if="tab === 'Backup'" />
     </template>
 
     <PlaceholderView
       v-else
       title="Settings"
-      note="Branding, backup, and store settings land later in Phase 6."
+      note="You don't have access to any settings sections."
     />
   </div>
 </template>

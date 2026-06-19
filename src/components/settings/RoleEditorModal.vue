@@ -41,12 +41,12 @@ const PERM_GROUPS: { title: string; hint: string; perms: PermKey[] }[] = [
   {
     title: 'Reports',
     hint: 'Sales reports and security/audit logs',
-    perms: ['export_reports', 'view_audit']
+    perms: ['export_reports', 'view_audit', 'view_price_log']
   },
   {
     title: 'Administration',
-    hint: 'Users, branding and store settings',
-    perms: ['manage_users', 'manage_branding', 'manage_settings']
+    hint: 'Users, branding, store settings and backups',
+    perms: ['manage_users', 'manage_branding', 'manage_settings', 'manage_backup']
   }
 ]
 // Catch any permission not placed in a group above (future-proofing).

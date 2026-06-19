@@ -3,6 +3,7 @@ import type {
   AdjustInput,
   AuditLogQuery,
   AuditRow,
+  BackupFile,
   Branding,
   Category,
   DailySalesReport,
@@ -177,6 +178,17 @@ const api = {
     create: (input: RoleInput) => invoke<number>('roles:create', input),
     update: (id: number, input: RoleInput) => invoke<true>('roles:update', { id, input }),
     remove: (id: number) => invoke<true>('roles:delete', id)
+  },
+  backup: {
+    now: () => invoke<BackupFile>('backup:now'),
+    list: () => invoke<BackupFile[]>('backup:list'),
+    getFolder: () => invoke<string>('backup:getFolder'),
+    /** Native folder picker; returns the chosen (resolved) folder or null if cancelled. */
+    chooseFolder: () => invoke<string | null>('backup:chooseFolder'),
+    /** Save a one-off copy via a native save dialog (e.g. to USB); null if cancelled. */
+    saveAs: () => invoke<string | null>('backup:saveAs'),
+    /** Restore a backup (path from the list, or omit to open a file picker). Relaunches the app. */
+    restore: (path?: string) => invoke<true>('backup:restore', { path })
   }
 }
 

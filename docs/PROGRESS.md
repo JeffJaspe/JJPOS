@@ -1,5 +1,22 @@
 # Progress
 
+## Phase 6 (part 4) — Database backup & restore ✅ (Jun 16, 2026)
+
+First of the remaining Phase 6 release items. Migration 011 adds the new **`manage_backup`** permission (granted to the locked Superadmin; opt-in for other roles via the role builder) and seeds `backup_folder` / `backup_retention` (14) / `backup_last_date`. New `electron/ipc/backup.ts` domain (registered). Verified: `npm run typecheck` + `npm run build` clean; dev boot applied migrations 010 & 011 and wrote the daily backup with no errors (`pos-backup-2026-06-16_145753.db`, 268 KB, in `%APPDATA%/jjpos/backups`).
+
+- **Backup tab** (Settings → Backup, gated `manage_backup`): shows the backup folder (read-only + **Change…** native folder picker — point it at a USB/network share), **Back up now**, **Save copy to…** (one-off copy via save dialog), **Restore from file…**, and a **Recent backups** list (name · local time · size) each with a **Restore** action.
+- **Backup mechanics**: live ("backup now", daily, save-as) backups use better-sqlite3's WAL-safe online `.backup()` API so they're consistent even while selling. Files are named `pos-backup-YYYY-MM-DD_HHmmss.db`; **retention keeps the newest 14**, older ones auto-pruned. Default folder is `userData/backups` when none is configured.
+- **Automatic backups** (decided with the user): **once a day** on first launch (guarded by `backup_last_date`, non-blocking so the cashier isn't delayed) **and on app close** (synchronous `wal_checkpoint(TRUNCATE)` + file copy in a `before-quit` handler, since the async backup API can't reliably finish during shutdown).
+- **Restore** (`backup:restore`, `manage_backup`): DESTRUCTIVE — validates the chosen file is a real SQLite DB with our schema, audit-logs `db_restore` + writes a **pre-restore safety snapshot** (`pos-prerestore-*.db`) of current data, then closes the DB, swaps the file, drops stale `-wal`/`-shm` sidecars, and **relaunches the app**. UI confirms with a clear "replaces all data / cannot be undone except via the safety copy" warning.
+- `closeDatabase()` / `getDbPath()` added to `electron/db/index.ts` so the file can be swapped safely; `manage_backup` added to `PERM_KEYS`/`PERM_LABELS` and the role editor's Administration group.
+
+### Notes / deferred
+
+- PDC custody etc. unchanged. NSIS installer + auto-update via electron-builder is the next remaining Phase 6 item.
+- Restore relies on a full app relaunch (`app.relaunch()` + `app.exit(0)`); the success toast rarely shows because the process exits first — that's expected.
+
+---
+
 ## Phase 5b — Payment setup + richer checks ✅ (Jun 14, 2026)
 
 Migration 009 adds `bank` / `check_due_date` to `ledger_entries` and seeds card/GCash/PayMaya settings. Verified by the headless E2E (`scripts/e2e-ledger.cjs`, run via `ELECTRON_RUN_AS_NODE=1 electron`): all **9 migrations** apply, payment settings + check columns present, AR math intact.

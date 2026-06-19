@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { initDatabase } from './db'
 import { registerIpcHandlers } from './ipc'
 import { applyStoredWindowIcon } from './ipc/branding'
+import { backupOnQuitSync, maybeDailyBackup } from './ipc/backup'
 
 // Dev/testing affordance: JJPOS_DEBUG_PORT=9222 npm run dev exposes the
 // Chrome DevTools Protocol so tooling can drive the renderer. Never set in production.
@@ -56,9 +57,23 @@ app.whenReady().then(() => {
   registerIpcHandlers()
   createWindow()
 
+  // Once-a-day safety backup (non-blocking — never delays the cashier's start).
+  void maybeDailyBackup()
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+// Synchronous backup on exit, then quit. The guard prevents re-entry when our
+// own app.quit() re-fires before-quit.
+let quitBackupDone = false
+app.on('before-quit', (event) => {
+  if (quitBackupDone) return
+  event.preventDefault()
+  quitBackupDone = true
+  backupOnQuitSync()
+  app.quit()
 })
 
 app.on('window-all-closed', () => {

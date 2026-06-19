@@ -48,6 +48,43 @@ function writeBarcodes(db: Database.Database, itemId: number, barcodes: string[]
   for (const barcode of barcodes) insert.run(itemId, barcode.trim())
 }
 
+/** Centavos → '₱1,234.56' for human-readable audit detail. */
+function peso(cents: number): string {
+  return '₱' + (Math.round(cents) / 100).toLocaleString('en-PH', { minimumFractionDigits: 2 })
+}
+
+/**
+ * Record any cost/sell/wholesale change for an item to the audit log so pricing
+ * history is reviewable (Reports → Price Changes, gated by `view_price_log`).
+ * Caller passes the row as it was before the update; no entry is written when no
+ * price moved. Must run inside the same transaction as the UPDATE.
+ */
+function auditPriceChange(
+  db: Database.Database,
+  userId: number,
+  item: { sku: string; name: string },
+  before: { cost_price: number; sell_price: number; wholesale_price: number | null },
+  after: { cost_price: number; sell_price: number; wholesale_price: number | null }
+): void {
+  const parts: string[] = []
+  if (before.sell_price !== after.sell_price) {
+    parts.push(`Sell ${peso(before.sell_price)}→${peso(after.sell_price)}`)
+  }
+  if (before.cost_price !== after.cost_price) {
+    parts.push(`Cost ${peso(before.cost_price)}→${peso(after.cost_price)}`)
+  }
+  if (before.wholesale_price !== after.wholesale_price) {
+    const w = (v: number | null): string => (v === null ? '—' : peso(v))
+    parts.push(`Wholesale ${w(before.wholesale_price)}→${w(after.wholesale_price)}`)
+  }
+  if (parts.length === 0) return
+  db.prepare('INSERT INTO audit_log (user_id, action, detail) VALUES (?, ?, ?)').run(
+    userId,
+    'price_change',
+    `${item.name} (SKU ${item.sku}): ${parts.join(', ')}`
+  )
+}
+
 /** Translate UNIQUE-constraint noise into a message the cashier can act on. */
 function friendlyConstraint(err: unknown): never {
   if (err instanceof Error && err.message.includes('items.sku')) {
@@ -139,11 +176,17 @@ export function registerItemHandlers(): void {
   })
 
   handle<{ id: number; input: ItemInput }, true>('items:update', ({ id, input }) => {
-    requirePermission('edit_items')
+    const user = requirePermission('edit_items')
     validateItemInput(input)
     const db = getDb()
     try {
       db.transaction(() => {
+        const before = db
+          .prepare('SELECT sku, name, cost_price, sell_price, wholesale_price FROM items WHERE id = ?')
+          .get(id) as
+          | { sku: string; name: string; cost_price: number; sell_price: number; wholesale_price: number | null }
+          | undefined
+        if (!before) throw new Error('Item not found')
         const info = db
           .prepare(
             `UPDATE items SET sku = ?, name = ?, description = ?, category_id = ?, unit = ?,
@@ -166,6 +209,11 @@ export function registerItemHandlers(): void {
             id
           )
         if (info.changes === 0) throw new Error('Item not found')
+        auditPriceChange(db, user.id, before, before, {
+          cost_price: input.cost_price,
+          sell_price: input.sell_price,
+          wholesale_price: input.wholesale_price
+        })
         writeBarcodes(db, id, input.barcodes)
       })()
       return true

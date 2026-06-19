@@ -13,6 +13,7 @@ import { registerUserHandlers } from './users'
 import { registerRoleHandlers } from './roles'
 import { registerReportHandlers } from './reports'
 import { registerLedgerHandlers } from './ledger'
+import { registerBackupHandlers } from './backup'
 
 /** One register function per domain — new domains (sales, inventory, ...) plug in here. */
 export function registerIpcHandlers(): void {
@@ -31,4 +32,5 @@ export function registerIpcHandlers(): void {
   registerRoleHandlers()
   registerReportHandlers()
   registerLedgerHandlers()
+  registerBackupHandlers()
 }

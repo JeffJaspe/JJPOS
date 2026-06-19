@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Guide for Claude Code working on this project. Read `docs/PLAN.md` for the full feature plan before starting any phase.
+Guide for Claude Code working on this project. **Check `docs/STATUS.md` first** for the at-a-glance done/pending checklist (so you don't rescan), then `docs/PLAN.md` for the full feature plan and `docs/PROGRESS.md` for per-phase detail. Keep `docs/STATUS.md` updated when a feature lands.
 
 ## Project
 

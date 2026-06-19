@@ -32,6 +32,19 @@ export function getDb(): Database.Database {
   return db
 }
 
+/** Absolute path to the live SQLite file. */
+export function getDbPath(): string {
+  return join(app.getPath('userData'), 'data', 'pos.db')
+}
+
+/** Close the connection so the file can be safely copied/replaced (restore). */
+export function closeDatabase(): void {
+  if (db) {
+    db.close()
+    db = null
+  }
+}
+
 function runMigrations(db: Database.Database): void {
   db.exec(
     `CREATE TABLE IF NOT EXISTS migrations (
