@@ -1,7 +1,7 @@
 # STATUS — plan vs. done (at-a-glance)
 
 > Quick checklist mapping `PLAN.md` → what's actually built. Update this when a feature lands.
-> Narrative details for each item live in `PROGRESS.md`. Last updated: **Jun 16, 2026**.
+> Narrative details for each item live in `PROGRESS.md`. Last updated: **Jun 19, 2026**.
 
 **Legend:** ✅ done · 🟡 partial · ⬜ not started · ⏭️ intentionally skipped
 
@@ -43,8 +43,8 @@
 
 | Item | PLAN ref | Status | Notes |
 |---|---|---|---|
-| **Manual "Clear cart" button** (with confirm) | §3.2, §10.11 | ⬜ | `cart.clear()` exists in the store but no cashier-facing button |
-| **Cart autosave + crash recovery** | §10.11 | ⬜ | `cart-draft.json` autosave; offer "Recover / Discard" to same cashier on next login |
+| **Manual "Clear cart" button** (with confirm) | §3.2, §10.11 | ✅ (Jun 19) | POS "Clear Cart" button + confirm modal; empties cart and drops the local draft |
+| **Cart autosave + crash recovery** | §10.11 | ✅ (Jun 19) | `cart-draft.json` autosave while signed in; "Recover / Discard" offered to the same cashier next login; logout reminds + clears a non-empty cart |
 | **Multi-station: station config + Settings UI** | §10.9 ①, §10.5 | ⬜ | Standalone/Hub/Client mode picker, `station.json`, Hub LAN-IP display, Test connection, spec-readiness check (§10.6) |
 | **Multi-station: Hub server** | §10.9 ②, §10.3 | ⬜ | Shared dispatch map + LAN `/rpc` endpoint, access-key gate |
 | **Multi-station: Client transport + token auth** | §10.9 ③, §10.4 | ⬜ | Client forwarding layer, per-station tokens, per-request `requireAuth` |

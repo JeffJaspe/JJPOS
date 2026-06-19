@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useCartStore } from '@/stores/cart'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
+import { useCartPersistence } from '@/composables/useCartPersistence'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppModal from '@/components/ui/AppModal.vue'
 import BrandLogo from '@/components/ui/BrandLogo.vue'
 
 interface MenuItem {
@@ -25,10 +28,20 @@ const MENU_ITEMS: MenuItem[] = [
 ]
 
 const auth = useAuthStore()
+const cart = useCartStore()
 const settings = useSettingsStore()
 const ui = useUiStore()
 const route = useRoute()
 const router = useRouter()
+
+// Cart crash-recovery + autosave (login-scoped: this shell only mounts when authenticated).
+const { recoveryDraft, recoverDraft, discardDraft, dismissRecovery, start } = useCartPersistence()
+onMounted(() => start())
+
+function savedAtLabel(iso: string): string {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString()
+}
 
 const collapsed = ref(localStorage.getItem('sidebar:collapsed') === '1')
 function toggleSidebar(): void {
@@ -39,7 +52,22 @@ function toggleSidebar(): void {
 const visibleMenus = computed(() => MENU_ITEMS.filter((m) => auth.hasMenu(m.key)))
 const pageTitle = computed(() => (route.meta.title as string) ?? '')
 
-async function logout(): Promise<void> {
+const logoutConfirmOpen = ref(false)
+
+function requestLogout(): void {
+  // Remind the cashier an unfinished sale will be cleared (graceful logout
+  // discards the draft, so it won't be offered back next login).
+  if (!cart.isEmpty) {
+    logoutConfirmOpen.value = true
+    return
+  }
+  void doLogout()
+}
+
+async function doLogout(): Promise<void> {
+  logoutConfirmOpen.value = false
+  // Graceful exit: drop the draft so the next login isn't offered a stale cart.
+  await window.api.cartDraft.clear().catch(() => {})
   await auth.logout()
   router.push({ name: 'login' })
 }
@@ -91,7 +119,7 @@ async function logout(): Promise<void> {
         <button
           class="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-100 hover:bg-gray-800 hover:text-white active:scale-[0.98]"
           :title="collapsed ? 'Sign out' : undefined"
-          @click="logout"
+          @click="requestLogout"
         >
           <AppIcon name="logout" />
           <span
@@ -140,5 +168,45 @@ async function logout(): Promise<void> {
         </RouterView>
       </main>
     </div>
+
+    <!-- Crash recovery: offer the owning cashier their unfinished sale -->
+    <AppModal
+      :open="recoveryDraft !== null"
+      title="Unfinished sale found"
+      @close="dismissRecovery"
+    >
+      <p class="text-sm text-gray-600">
+        A sale was in progress when the app last closed unexpectedly. Recover it to
+        continue, or discard to start fresh.
+      </p>
+      <p v-if="recoveryDraft" class="mt-2 text-xs text-gray-400">
+        Saved {{ savedAtLabel(recoveryDraft.savedAt) }} · {{ recoveryDraft.userName }}
+      </p>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <button class="btn-secondary" @click="discardDraft">Discard</button>
+          <button class="btn-primary" @click="recoverDraft">Recover</button>
+        </div>
+      </template>
+    </AppModal>
+
+    <!-- Logout reminder: a non-empty cart will be cleared -->
+    <AppModal
+      :open="logoutConfirmOpen"
+      title="Sign out?"
+      @close="logoutConfirmOpen = false"
+    >
+      <p class="text-sm text-gray-600">
+        You have an unfinished sale in the cart. Signing out will
+        <span class="font-medium text-gray-900">clear it</span> — this can't be recovered.
+        Hold the sale first if you want to keep it.
+      </p>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <button class="btn-secondary" @click="logoutConfirmOpen = false">Cancel</button>
+          <button class="btn-primary" @click="doLogout">Sign out &amp; clear</button>
+        </div>
+      </template>
+    </AppModal>
   </div>
 </template>

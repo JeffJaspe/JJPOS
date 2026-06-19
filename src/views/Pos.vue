@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import PaymentModal from '@/components/pos/PaymentModal.vue'
 import HeldSalesModal from '@/components/pos/HeldSalesModal.vue'
 import VoidSaleModal from '@/components/pos/VoidSaleModal.vue'
@@ -161,38 +161,154 @@ function seedTxnInputs(): void {
 }
 function setTxnMode(event: Event): void {
   txnMode.value = (event.target as HTMLSelectElement).value === 'percent' ? 'percent' : 'amount'
-  applyTxnDiscount()
+  // Gated users apply on the confirm step; permission-holders apply immediately.
+  if (baseCanDiscount) applyTxnDiscount()
 }
 
-// Manual discounts (line + transaction) are permission-gated; a cashier without
-// `discount` can unlock them for this sale via inline supervisor approval.
+// Manual discounts are permission-gated. A cashier WITHOUT `discount` must get a
+// supervisor override for EACH discount field separately (each cart line and the
+// transaction discount are independent), then confirm the resulting peso amount;
+// the field re-locks afterward, so every change needs a fresh approval. Users
+// WITH `discount` edit freely (no per-entry confirm, no re-lock).
 const baseCanDiscount = can('discount')
-const discountAllowed = computed(() => baseCanDiscount || cart.discountApprover !== null)
 const discountOverrideOpen = ref(false)
-function onDiscountApproved(auth: { username: string; password: string }): void {
-  cart.setDiscountApprover(auth)
-  discountOverrideOpen.value = false
-  toast.success(`Discounts unlocked (approved by ${auth.username})`)
-  scanInput.value?.focus()
+
+/** The single discount field a non-permission cashier currently has unlocked. */
+type DiscountTarget = { type: 'txn' } | { type: 'line'; key: number }
+const discountUnlock = ref<DiscountTarget | null>(null)
+const pendingUnlock = ref<DiscountTarget | null>(null)
+/**
+ * Confirmation shown after a gated discount is entered. `percent` is the entered
+ * rate when it was a % discount (so the prompt shows "10% = ₱X"), else null.
+ */
+const discountConfirm = ref<{
+  target: DiscountTarget
+  peso: number
+  percent: number | null
+  detail: string
+} | null>(null)
+
+function txnDiscountEditable(): boolean {
+  return baseCanDiscount || discountUnlock.value?.type === 'txn'
+}
+function lineDiscountEditable(line: CartLine): boolean {
+  const u = discountUnlock.value
+  return baseCanDiscount || (u?.type === 'line' && u.key === line.key)
 }
 
-/** Per-line discount from the line's ₱/% mode + typed value, capped at the line. */
-function recomputeLineDiscount(line: CartLine): void {
+/** Ask a supervisor to unlock one specific discount field. */
+function requestUnlock(target: DiscountTarget): void {
+  pendingUnlock.value = target
+  discountOverrideOpen.value = true
+}
+function closeDiscountOverride(): void {
+  discountOverrideOpen.value = false
+  pendingUnlock.value = null
+}
+function onDiscountApproved(auth: { username: string; password: string }): void {
+  // The approval authorizes one field now and rides along to sales:complete,
+  // where the server re-validates the approver holds `discount`.
+  cart.setDiscountApprover(auth)
+  discountUnlock.value = pendingUnlock.value
+  pendingUnlock.value = null
+  discountOverrideOpen.value = false
+  toast.success(`Discount unlocked (approved by ${auth.username})`)
+}
+
+/** Peso a typed line discount resolves to, capped at the line gross. */
+function lineDiscountPeso(line: CartLine): number {
   const gross = line.price * line.qty
   const v = Number.parseFloat(line.discountInput) || 0
-  if (v <= 0) {
-    line.lineDiscount = 0
+  if (v <= 0) return 0
+  return line.discountMode === 'percent'
+    ? Math.min(Math.round((gross * Math.min(v, 100)) / 100), gross)
+    : Math.min(pesosToCentavos(line.discountInput), gross)
+}
+/** Peso a typed transaction discount resolves to, capped at the discountable base. */
+function txnDiscountPeso(): number {
+  const base = cart.subtotal - cart.lineDiscountTotal
+  const v = Number.parseFloat(txnInput.value) || 0
+  if (v <= 0) return 0
+  return txnMode.value === 'percent'
+    ? Math.round((base * Math.min(Math.trunc(v), 100)) / 100)
+    : Math.min(pesosToCentavos(txnInput.value), base)
+}
+
+/** Per-line discount — applies straight away for permission-holders. */
+function recomputeLineDiscount(line: CartLine): void {
+  line.lineDiscount = lineDiscountPeso(line)
+}
+function onLineDiscountCommit(line: CartLine): void {
+  if (baseCanDiscount) {
+    recomputeLineDiscount(line)
     return
   }
-  if (line.discountMode === 'percent') {
-    line.lineDiscount = Math.min(Math.round((gross * Math.min(v, 100)) / 100), gross)
-  } else {
-    line.lineDiscount = Math.min(pesosToCentavos(line.discountInput), gross)
+  const u = discountUnlock.value
+  if (u?.type !== 'line' || u.key !== line.key) return
+  const peso = lineDiscountPeso(line)
+  if (peso <= 0) {
+    // Nothing entered — revert the field and re-lock without prompting.
+    line.discountInput = line.lineDiscount ? centavosToInput(line.lineDiscount) : ''
+    discountUnlock.value = null
+    return
   }
+  const percent =
+    line.discountMode === 'percent'
+      ? Math.min(Number.parseFloat(line.discountInput) || 0, 100)
+      : null
+  discountConfirm.value = { target: { type: 'line', key: line.key }, peso, percent, detail: line.name }
 }
 function setLineMode(line: CartLine, event: Event): void {
   line.discountMode = (event.target as HTMLSelectElement).value === 'percent' ? 'percent' : 'amount'
-  recomputeLineDiscount(line)
+  if (baseCanDiscount) recomputeLineDiscount(line)
+}
+
+function onTxnDiscountCommit(): void {
+  if (baseCanDiscount) {
+    applyTxnDiscount()
+    return
+  }
+  if (discountUnlock.value?.type !== 'txn') return
+  const peso = txnDiscountPeso()
+  if (peso <= 0) {
+    seedTxnInputs()
+    discountUnlock.value = null
+    return
+  }
+  const percent =
+    txnMode.value === 'percent'
+      ? Math.min(Math.trunc(Number.parseFloat(txnInput.value) || 0), 100)
+      : null
+  discountConfirm.value = { target: { type: 'txn' }, peso, percent, detail: 'this sale' }
+}
+
+/** Confirm the peso amount → apply the discount, then re-lock the field. */
+function confirmDiscount(): void {
+  const c = discountConfirm.value
+  if (!c) return
+  if (c.target.type === 'line') {
+    const key = c.target.key
+    const line = cart.lines.find((l) => l.key === key)
+    if (line) line.lineDiscount = c.peso
+  } else {
+    applyTxnDiscount()
+  }
+  discountConfirm.value = null
+  discountUnlock.value = null // re-lock — the next change needs a fresh approval
+  scanInput.value?.focus()
+}
+function cancelDiscount(): void {
+  const c = discountConfirm.value
+  if (c?.target.type === 'line') {
+    const key = c.target.key
+    const line = cart.lines.find((l) => l.key === key)
+    if (line) line.discountInput = line.lineDiscount ? centavosToInput(line.lineDiscount) : ''
+  } else if (c?.target.type === 'txn') {
+    seedTxnInputs()
+  }
+  discountConfirm.value = null
+  discountUnlock.value = null
+  scanInput.value?.focus()
 }
 
 // -- Senior / PWD discount ------------------------------------------------------
@@ -233,6 +349,18 @@ function onVoidApproved(auth: { username: string; password: string }): void {
   }
   pendingVoidKey.value = null
   overrideOpen.value = false
+  scanInput.value?.focus()
+}
+
+// -- Clear cart -----------------------------------------------------------------
+
+const clearCartOpen = ref(false)
+function confirmClearCart(): void {
+  // Empties the cart; the shell's autosave watcher then drops the local draft.
+  cart.clear()
+  txnInput.value = ''
+  txnMode.value = 'amount'
+  clearCartOpen.value = false
   scanInput.value?.focus()
 }
 
@@ -351,8 +479,17 @@ onMounted(() => {
   document.addEventListener('fullscreenchange', onFullscreenChange)
   window.addEventListener('keydown', onKeydown)
   settings.loadAppSettings()
+  // Reflect any pre-existing cart discount (e.g. a recovered draft) in the inputs.
+  seedTxnInputs()
   scanInput.value?.focus()
 })
+
+// Keep the document-discount inputs in sync when the cart discount changes from
+// outside this view (recall, crash recovery). Fires only on committed changes.
+watch(
+  () => [cart.discountType, cart.discountValue, cart.special !== null],
+  () => seedTxnInputs()
+)
 
 onBeforeUnmount(() => {
   document.removeEventListener('fullscreenchange', onFullscreenChange)
@@ -500,27 +637,34 @@ const changeClass = computed(() => {
                 </td>
                 <td class="px-3 py-2">
                   <div class="flex items-center justify-end gap-1">
-                    <select
-                      :value="line.discountMode"
-                      :disabled="!discountAllowed"
-                      class="input w-12 px-1 py-1 text-xs disabled:bg-gray-100"
-                      @change="setLineMode(line, $event)"
+                    <template v-if="lineDiscountEditable(line)">
+                      <select
+                        :value="line.discountMode"
+                        class="input w-12 px-1 py-1 text-xs"
+                        @change="setLineMode(line, $event)"
+                      >
+                        <option value="amount">₱</option>
+                        <option value="percent">%</option>
+                      </select>
+                      <input
+                        v-model="line.discountInput"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="0"
+                        class="input w-16 px-2 py-1 text-right"
+                        @change="onLineDiscountCommit(line)"
+                        @keydown.enter.prevent="onLineDiscountCommit(line)"
+                      />
+                    </template>
+                    <button
+                      v-else
+                      class="rounded border border-amber-300 px-2 py-1 text-xs font-medium text-amber-700 transition-colors duration-100 hover:bg-amber-50"
+                      title="Line discount needs supervisor approval"
+                      @click="requestUnlock({ type: 'line', key: line.key })"
                     >
-                      <option value="amount">₱</option>
-                      <option value="percent">%</option>
-                    </select>
-                    <input
-                      v-model="line.discountInput"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="0"
-                      :disabled="!discountAllowed"
-                      :title="discountAllowed ? undefined : 'Discounts need permission — unlock below'"
-                      class="input w-16 px-2 py-1 text-right disabled:cursor-not-allowed disabled:bg-gray-100"
-                      @change="recomputeLineDiscount(line)"
-                      @keydown.enter.prevent="recomputeLineDiscount(line)"
-                    />
+                      🔒 {{ line.lineDiscount ? '-' + formatPeso(line.lineDiscount) : 'Less' }}
+                    </button>
                   </div>
                 </td>
                 <td class="px-3 py-2 text-right font-semibold tabular-nums">
@@ -564,16 +708,10 @@ const changeClass = computed(() => {
             <span>Line discounts</span>
             <span class="tabular-nums">-{{ formatPeso(cart.lineDiscountTotal) }}</span>
           </div>
+          <!-- Manual transaction discount (hidden while senior/PWD is active) -->
           <div v-if="!cart.special" class="flex items-center justify-between gap-2 text-gray-600">
             <span>Discount</span>
-            <button
-              v-if="!discountAllowed"
-              class="ml-auto rounded border border-amber-300 px-2 py-1 text-xs font-medium text-amber-700 transition-colors duration-100 hover:bg-amber-50"
-              @click="discountOverrideOpen = true"
-            >
-              🔒 Unlock (supervisor)
-            </button>
-            <template v-else>
+            <template v-if="txnDiscountEditable()">
               <select
                 :value="txnMode"
                 class="input w-14 px-1 py-1 text-right text-xs"
@@ -589,31 +727,38 @@ const changeClass = computed(() => {
                 step="0.01"
                 placeholder="0"
                 class="input w-20 px-2 py-1 text-right text-xs"
-                @change="applyTxnDiscount"
-                @keydown.enter.prevent="applyTxnDiscount"
+                @change="onTxnDiscountCommit"
+                @keydown.enter.prevent="onTxnDiscountCommit"
               />
               <span class="w-20 text-right tabular-nums">-{{ formatPeso(cart.txnDiscount) }}</span>
             </template>
-          </div>
-          <p v-if="!cart.special && cart.discountApprover" class="text-right text-xs text-emerald-600">
-            Discounts approved by {{ cart.discountApprover?.username }}
-          </p>
-          <template v-else>
-            <div class="flex items-center justify-between gap-2 text-emerald-700">
-              <span class="font-medium">
-                {{ cart.special?.type === 'senior' ? 'Senior' : 'PWD' }}
-                <span class="font-mono text-xs text-emerald-600">{{ cart.special?.id }}</span>
-              </span>
-              <span class="ml-auto tabular-nums">-{{ formatPeso(cart.specialDiscount) }}</span>
+            <template v-else>
               <button
-                class="text-gray-300 transition-colors duration-100 hover:text-red-600"
-                aria-label="Remove senior/PWD discount"
-                @click="removeSpecial"
+                class="ml-auto rounded border border-amber-300 px-2 py-1 text-xs font-medium text-amber-700 transition-colors duration-100 hover:bg-amber-50"
+                @click="requestUnlock({ type: 'txn' })"
               >
-                ✕
+                🔒 Unlock (supervisor)
               </button>
-            </div>
-          </template>
+              <span v-if="cart.txnDiscount" class="w-20 text-right tabular-nums">
+                -{{ formatPeso(cart.txnDiscount) }}
+              </span>
+            </template>
+          </div>
+          <!-- Senior/PWD discount (replaces the manual discount) -->
+          <div v-else class="flex items-center justify-between gap-2 text-emerald-700">
+            <span class="font-medium">
+              {{ cart.special?.type === 'senior' ? 'Senior' : 'PWD' }}
+              <span class="font-mono text-xs text-emerald-600">{{ cart.special?.id }}</span>
+            </span>
+            <span class="ml-auto tabular-nums">-{{ formatPeso(cart.specialDiscount) }}</span>
+            <button
+              class="text-gray-300 transition-colors duration-100 hover:text-red-600"
+              aria-label="Remove senior/PWD discount"
+              @click="removeSpecial"
+            >
+              ✕
+            </button>
+          </div>
           <div v-if="cart.vouchers.length" class="space-y-1 border-t border-gray-100 pt-1.5">
             <div
               v-for="v in cart.vouchers"
@@ -656,6 +801,13 @@ const changeClass = computed(() => {
           <button class="btn-secondary" @click="voidOpen = true">Void Sale</button>
           <button class="btn-secondary" @click="printReceipt(true)">Reprint Last</button>
         </div>
+        <button
+          class="rounded-lg border border-red-300 py-2 text-sm font-medium text-red-700 transition-colors duration-100 hover:bg-red-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+          :disabled="cart.isEmpty"
+          @click="clearCartOpen = true"
+        >
+          Clear Cart
+        </button>
         <button
           class="btn-secondary flex items-center justify-center gap-2"
           @click="toggleFullscreen"
@@ -701,6 +853,44 @@ const changeClass = computed(() => {
       </template>
     </AppModal>
 
+    <!-- Discount confirm: shows % (when entered) and its peso equivalent; field re-locks after -->
+    <AppModal :open="discountConfirm !== null" title="Confirm Discount" @close="cancelDiscount">
+      <p class="text-sm text-gray-600">
+        Apply a discount of
+        <span class="text-lg font-bold text-gray-900">
+          <template v-if="discountConfirm?.percent != null">
+            {{ discountConfirm.percent }}% = {{ formatPeso(discountConfirm.peso) }}
+          </template>
+          <template v-else>{{ formatPeso(discountConfirm?.peso ?? 0) }}</template>
+        </span>
+        to <span class="font-medium">{{ discountConfirm?.detail }}</span>?
+      </p>
+      <p class="mt-2 text-xs text-gray-400">
+        After you confirm, this discount field locks again — applying another needs a
+        fresh supervisor approval.
+      </p>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <button class="btn-secondary" @click="cancelDiscount">Cancel</button>
+          <button class="btn-primary" @click="confirmDiscount">Confirm</button>
+        </div>
+      </template>
+    </AppModal>
+
+    <!-- Clear cart confirm -->
+    <AppModal :open="clearCartOpen" title="Clear cart?" @close="clearCartOpen = false">
+      <p class="text-sm text-gray-600">
+        This removes all {{ cart.itemCount }} item(s), vouchers, and discounts from the
+        current sale. This can't be undone.
+      </p>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <button class="btn-secondary" @click="clearCartOpen = false">Cancel</button>
+          <button class="btn-primary" @click="confirmClearCart">Clear cart</button>
+        </div>
+      </template>
+    </AppModal>
+
     <PaymentModal
       ref="paymentModal"
       :open="paymentOpen"
@@ -736,10 +926,10 @@ const changeClass = computed(() => {
     <SupervisorOverrideModal
       :open="discountOverrideOpen"
       title="Discount — Approval Needed"
-      message="You don't have permission to apply discounts. A supervisor must approve."
+      message="You don't have permission to apply discounts. A supervisor must approve this one."
       permission="discount"
       action="apply discount"
-      @close="discountOverrideOpen = false"
+      @close="closeDiscountOverride"
       @approved="onDiscountApproved"
     />
   </div>

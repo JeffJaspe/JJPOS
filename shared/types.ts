@@ -364,6 +364,19 @@ export interface HeldSale {
   cashier: string
 }
 
+/**
+ * Locally-persisted draft of the active cart (userData/cart-draft.json), used to
+ * recover an in-progress sale after a crash/power-off. `payload` is a cart
+ * snapshot (the same JSON `cart.snapshot()` produces). Cleared on a graceful
+ * exit (sale complete, Clear cart, logout) so only ungraceful exits leave one.
+ */
+export interface CartDraft {
+  userId: number
+  userName: string
+  savedAt: string
+  payload: string
+}
+
 // ---------------------------------------------------------------------------
 // Inventory
 // ---------------------------------------------------------------------------

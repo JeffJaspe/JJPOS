@@ -5,6 +5,7 @@ import type {
   AuditRow,
   BackupFile,
   Branding,
+  CartDraft,
   Category,
   DailySalesReport,
   ExcelExport,
@@ -189,6 +190,13 @@ const api = {
     saveAs: () => invoke<string | null>('backup:saveAs'),
     /** Restore a backup (path from the list, or omit to open a file picker). Relaunches the app. */
     restore: (path?: string) => invoke<true>('backup:restore', { path })
+  },
+  cartDraft: {
+    /** Autosave the active cart (a `cart.snapshot()` string) for crash recovery. */
+    save: (payload: string) => invoke<true>('cartDraft:save', { payload }),
+    /** The signed-in cashier's recoverable draft, or null. */
+    load: () => invoke<CartDraft | null>('cartDraft:load'),
+    clear: () => invoke<true>('cartDraft:clear')
   }
 }
 

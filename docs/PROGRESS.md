@@ -1,5 +1,34 @@
 # Progress
 
+## POS discount gating — per-field unlock + peso confirm + re-lock ✅ (Jun 20, 2026)
+
+Reworked how manual discounts are authorized for cashiers **without** the `discount` permission (per user request). Renderer-only — `sales:complete` already re-validates a single approver for any manual discount, so the server is unchanged.
+
+- **Separate unlocks per field**: each cart line's "Less" discount and the whole-transaction "Discount" are now unlocked **independently** via supervisor override. Unlocking one no longer unlocks the others (the old model unlocked every discount for the rest of the sale). A locked field shows a `🔒` button (the line button also shows the applied `-₱` amount when one is set).
+- **Peso confirmation**: after a gated cashier types a discount and commits, a "Confirm Discount" modal shows the resolved **peso amount** (even when entered as a %) before it's applied.
+- **Re-lock after confirming**: confirming applies the discount and immediately re-locks that field — changing it or adding another needs a **fresh supervisor approval** every time. Cancelling reverts the field. Approval still sets `cart.discountApprover` (rides to `sales:complete` for server re-validation).
+- **Permission-holders unchanged**: users with `discount` edit line/transaction discounts freely — no per-entry confirm, no re-lock.
+- Implementation in `Pos.vue`: replaced the single `discountAllowed` gate with `discountUnlock`/`pendingUnlock` targets (`{type:'txn'}` | `{type:'line',key}`), `lineDiscountEditable`/`txnDiscountEditable`, `lineDiscountPeso`/`txnDiscountPeso`, and `onLineDiscountCommit`/`onTxnDiscountCommit` → `confirmDiscount`/`cancelDiscount`. Also fixed a latent template bug where the senior/PWD totals row was a `v-else` of the (now-removed) "Discounts approved by" line and could render a stray empty row.
+
+---
+
+## Phase 6 (part 5) — Clear cart + cart crash-recovery ✅ (Jun 19, 2026)
+
+The two remaining Phase 6 polish items (PLAN §3.2, §10.11). No schema changes — the draft is a local JSON file, not the DB (so it survives an ungraceful exit and will work on a future Client station that has no DB). Verified: `npm run typecheck` + `npm run build` clean.
+
+- **Manual "Clear Cart" button** (POS, right-hand actions): a red-outlined button (disabled when empty) opens an `AppModal` confirm showing the item count; confirming empties the cart (lines, vouchers, discounts) and resets the document-discount inputs. Emptying the cart makes the autosave watcher drop the local draft.
+- **Autosave** (`useCartPersistence` composable, mounted by `AppShell` so it's login-scoped): subscribes to the cart store and writes `userData/cart-draft.json` (debounced 400 ms) on every change while signed in, via new `cartDraft:save` IPC. The draft carries `{ userId, userName, savedAt, payload }` where `payload` is the existing `cart.snapshot()` JSON (so it excludes the transient discount-approver creds, same as held sales). Emptying the cart clears the draft immediately (no "recover an empty cart" prompt).
+- **Recovery**: on the next login (`AppShell` mount) `cartDraft:load` returns the draft **only if it belongs to the signed-in cashier**; if the cart is empty it offers an "Unfinished sale found — Recover / Discard" modal (showing when it was saved + by whom). Recover restores the snapshot into the cart; Discard deletes the draft. Autosave is paused while the prompt is open so it can't clear the draft before the cashier decides.
+- **Graceful logout** (the user's ask): `Sign out` now checks the cart first. With a non-empty cart it pops a "Signing out will clear it — this can't be recovered" reminder; confirming clears the local draft **and** the cart, so a deliberate logout never leaves a recoverable draft (only an ungraceful crash/power-off does). Empty cart → logs out straight away.
+- New IPC domain `electron/ipc/cartDraft.ts` (`save`/`load`/`clear`, all `requireAuth`) + `window.api.cartDraft` in preload; `CartDraft` type in `shared/types.ts`.
+
+### Notes / deferred
+
+- The draft is tagged per-cashier only (no `stationName` yet) — station tagging arrives with the Phase 7 multi-station config (`station.json`). The recovery file path/format already leaves room for it.
+- Same-user-only recovery preserves account isolation: a different cashier logging in never sees another's draft.
+
+---
+
 ## Phase 6 (part 4) — Database backup & restore ✅ (Jun 16, 2026)
 
 First of the remaining Phase 6 release items. Migration 011 adds the new **`manage_backup`** permission (granted to the locked Superadmin; opt-in for other roles via the role builder) and seeds `backup_folder` / `backup_retention` (14) / `backup_last_date`. New `electron/ipc/backup.ts` domain (registered). Verified: `npm run typecheck` + `npm run build` clean; dev boot applied migrations 010 & 011 and wrote the daily backup with no errors (`pos-backup-2026-06-16_145753.db`, 268 KB, in `%APPDATA%/jjpos/backups`).
